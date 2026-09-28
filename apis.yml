@@ -1,23 +1,98 @@
 aid: bilt
+
 name: BILT
-description: 'BILT is a company surfaced via the API Evangelist harvest backlog (source: secondary-market)
-  and added to the network as a stub for full-pipeline profiling.'
+
+image: https://framerusercontent.com/assets/YTMxpEJv31tk1JFEEX3t2rIls.png
+
+description: BILT is a financial technology company offering a loyalty and payments platform that lets members earn rewards on rent and mortgage
+  payments. It provides a co‑branded credit card, rent‑payment reporting to credit bureaus, and a suite of neighborhood benefits, aiming to transform
+  housing expenses into valuable points and perks for users.
+
 url: https://raw.githubusercontent.com/api-evangelist/bilt/refs/heads/main/apis.yml
+
 x-type: company
+
 x-source: harvest:secondary-market
-x-tier: stub
-x-tier-reason: harvest
+
+x-tier: profiled
+x-tier-reason: enrichment pass 2026-09-28 (modular-v1; was harvest)
+
 specificationVersion: '0.20'
+
 created: '2026-09-28'
+
 modified: '2026-09-28'
+
 tags:
-- Company
-apis: []
+- FinTech
+- Loyalty
+- Payments
+- RentRewards
+- CreditCard
+- RealEstate
+
 maintainers:
 - FN: Kin Lane
   email: kin@apievangelist.com
 - FN: APIs.json
   email: info@apis.io
+
 common:
+- type: Spectral
+  url: rules/bilt-rules.yml
+- type: JSONLD
+  url: json-ld/bilt-context.jsonld
+- type: Vocabulary
+  url: vocabulary/bilt-vocabulary.yml
+- type: Webhooks
+  url: asyncapi/bilt-webhooks.yml
+- type: DataModel
+  url: data-model/bilt-data-model.yml
+- type: Idempotency
+  url: conventions/bilt-conventions.yml
+- type: Conventions
+  url: conventions/bilt-conventions.yml
+- type: ErrorCatalog
+  url: errors/bilt-problem-types.yml
+- type: Conformance
+  url: conformance/bilt-conformance.yml
+- type: Overlay
+  url: overlays/bilt-overlay.yaml
+- type: LLMsTxt
+  url: llms/bilt-llms.txt
+- type: Hosts
+  url: hosts/bilt-hosts.yml
+- type: Vendors
+  url: vendors/bilt-vendors.yml
+- type: TrustCenter
+  url: https://trust.bilt.com/
+- type: Documentation
+  url: https://developers.bilt.com/
+- type: APIReference
+  url: https://developers.bilt.com/docs/
+- type: DomainSecurity
+  url: security/bilt-domain-security.yml
 - type: Website
-  url: https://www.nasdaqprivatemarket.com/
+  url: https://www.bilt.com
+
+apis:
+- name: Bilt Checkout SDK
+  description: External backend contract for integrators using the Bilt Checkout SDK, documented at developers.bilt.com. No owned OpenAPI spec
+    found on Bilt's own domain.
+  humanURL: https://developers.bilt.com/docs/
+  aid: bilt:bilt-checkout-sdk
+
+x-coverage:
+  state: unreadable
+  reason: no-machine-readable-spec
+  detail: The only OpenAPI spec found is hosted at partnerapi.biltrewards.com, not on Bilt's own domain.
+  evidence:
+  - url: https://developers.bilt.com/docs/specs/checkout-sdk.yml
+    status: 200
+  checked: '2026-09-28'
+x-enrichment:
+  date: '2026-09-28'
+  status: enriched
+  artifacts_added: 18
+  pass: modular-v1
+  engine: identity=local,contract=local,surfaces=local,docs=local,regulatory=local

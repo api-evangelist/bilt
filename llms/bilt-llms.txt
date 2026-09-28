@@ -1,0 +1,70 @@
+# Bilt
+> Bilt is the membership for where you live, turning rent and mortgage payments into Bilt Points, the industry's most valuable and flexible rewards currency, while connecting members to exclusive Neighborhood Benefits™ where they live.
+
+The Bilt Card lineup has three cards. Members who want no annual fee choose Blue; Members who maximize dining or grocery choose Obsidian ($95 annual fee); Members who want the richest travel rewards and premium benefits choose Palladium ($495 annual fee). Every Bilt Card earns Bilt Points on rent, mortgage, and HOA payments with no transaction fee — the only credit card to do so — and points transfer 1:1 to airline and hotel partners. On every card, Members choose Flexible Bilt Cash (4% back in Bilt Cash on everyday spend) or Housing-only rewards (up to 1.25X points on rent and mortgage).
+
+## Card
+- [/card](/card): Overview of the Bilt Cards — three credit cards that earn Bilt Points on rent, mortgage, HOA, and everyday spend with no transaction fee on housing payments. Points transfer 1:1 to airline and hotel partners and are consistently ranked among the most valuable rewards currencies. The lineup: Blue ($0 annual fee), Obsidian ($95), and Palladium ($495); every card offers a choice of Flexible Bilt Cash (4% back in Bilt Cash on everyday spend) or Housing-only rewards (up to 1.25X on housing).
+- [/card/blue](/card/blue): The Bilt Blue Card has no annual fee and earns 1X Bilt Points on everyday purchases, plus up to 1.25X on rent, mortgage, and HOA payments with no transaction fee. Includes a $100 Bilt Cash welcome bonus and Neighborhood Benefits — elevated earn at partner restaurants, Lyft, and Walgreens.
+- [/card/obsidian](/card/obsidian): The Bilt Obsidian Card ($95 annual fee) earns 3X Bilt Points on a Member's choice of dining or grocery (grocery up to $25k/year), 2X on travel, and 1X on everyday spend — plus up to 1.25X on rent, mortgage, and HOA payments with no transaction fee. Includes a $100 annual Bilt Travel Portal hotel credit.
+- [/card/palladium](/card/palladium): The Bilt Palladium Card ($495 annual fee) is Bilt's most premium card, earning up to 5X Bilt Points on Bilt Dining, 4X on Lyft, 4X on hotels and 3X on flights booked in the Bilt Travel Portal, and 2X on everything else — plus up to 1.25X on rent, mortgage, and HOA with no transaction fee. Includes $200 annual Bilt Cash, a $400 annual Bilt Travel Portal hotel credit, and Priority Pass lounge access. Points transfer 1:1 to airline and hotel partners.
+- [/p/united-card](/p/united-card): The United® card, a Chase co-branded card that earns 2X United MileagePlus miles on rent when Members pay through Bilt.
+
+## Rewards on Rent, Mortgage, and Housing
+- [/p/rent-day](/p/rent-day): Overview of Rent Day®, Bilt's monthly benefits drop on the 1st of every month, including travel transfer bonuses, Neighborhood Experiences, and Rent Free™.
+- [/p/dec-rent-day](/p/dec-rent-day): Details on December's Rent Day benefits, including that month's featured collaborator and Neighborhood Experiences.
+- [/p/leaserenewalpoints](/p/leaserenewalpoints): How Members earn bonus Bilt Points for renewing their lease through Bilt.
+- [/p/student-loans](/p/student-loans): How Members redeem the Bilt Points they earn on rent, mortgage, and everyday spend, toward student loan payments.
+
+## Bilt Cash
+- [/p/bilt-cash](/p/bilt-cash): What Bilt Cash is, how Members choose to earn 4% back in Bilt Cash on everyday spend through the Flexible Bilt Cash reward path, and how it's redeemed across the Bilt ecosystem. Up to $100 of Bilt Cash earned rolls over to the next year.
+
+## Neighborhood Benefits
+- [/p/lyft](/p/lyft): How Members earn and redeem Bilt Points on Lyft rides after linking their Bilt and Lyft accounts.
+- [/p/walgreens](/p/walgreens): How Members earn Bilt Points and apply Automatic HSA/FSA Savings on purchases at Walgreens.
+- [/p/neighborhood-parking](/p/neighborhood-parking): How Members earn Bilt Points on parking at participating Metropolis locations.
+- [/p/home-delivery](/p/home-delivery): How Members earn and redeem Bilt Points on Home Delivery orders, Powered by Gopuff.
+- [/p/flyfish-club](/p/flyfish-club): Information on Bilt's Neighborhood Dining Experience partnership with Flyfish Club.
+- [/p/qru-dinner](/p/qru-dinner): Details on a member-exclusive Bilt Neighborhood Dining Experience.
+- [/p/diplo-x-bilt](/p/diplo-x-bilt): Details on a Rent Day collaboration with Diplo.
+- [/p/madonna-x-bilt-vinyl](/p/madonna-x-bilt-vinyl): Details on a Rent Day collaboration featuring a Madonna vinyl release.
+
+## Travel Rewards
+- [/p/alaska](/p/alaska): How Members earn and transfer Bilt Points 1:1 into Alaska Airlines Mileage Plan miles.
+- [/p/alaska-transfer](/p/alaska-transfer): How to transfer Bilt Points 1:1 into Alaska Airlines Mileage Plan miles.
+- [/p/united](/p/united): How Members transfer Bilt Points 1:1 into United MileagePlus miles.
+- [/p/southwest](/p/southwest): How Members transfer Bilt Points 1:1 into Southwest Airlines Rapid Rewards points.
+- [/p/qatar](/p/qatar): How Members transfer Bilt Points 1:1 into Qatar Airways Privilege Club Avios.
+- [/p/etihad](/p/etihad): How Members transfer Bilt Points 1:1 into Etihad Guest miles.
+- [/p/jal](/p/jal): How Members transfer Bilt Points 1:1 into Japan Airlines Mileage Bank miles.
+- [/p/tap](/p/tap): How Members transfer Bilt Points 1:1 into TAP Air Portugal Miles&Go points.
+- [/p/flyingblue-card](/p/flyingblue-card): Information on Bilt's Flying Blue transfer partnership with Air France and KLM.
+- [/p/marriott](/p/marriott): How Members transfer Bilt Points 1:1 into Marriott Bonvoy points.
+- [/p/hilton](/p/hilton): How Members transfer Bilt Points 1:1 into Hilton Honors points.
+- [/p/wyndham](/p/wyndham): How Members transfer Bilt Points 1:1 into Wyndham Rewards points.
+- [/p/all](/p/all): How Members transfer Bilt Points into Accor Live Limitless (ALL) points at a 3:2 ratio.
+- [/p/home-away-from-home](/p/home-away-from-home): Details on the Home Away from Home collection of luxury hotels, offering Gold and Platinum Elite Members benefits like room upgrades and complimentary breakfast for two.
+- [/p/blade](/p/blade): Information on Bilt's partnership with BLADE, including Elite Status benefits like a Silver discount on flights and Gold complimentary lounge access.
+
+## Everyday Rewards
+- [/p/amazon](/p/amazon): How Members use Bilt Points at Amazon.com checkout to cover all or part of a purchase.
+- [/p/rakuten](/p/rakuten): How Members choose Bilt Points as their payment method to earn when shopping through Rakuten.
+
+## Buy a Home
+- [/p/home](/p/home): Overview of Buy a Home, Bilt's home search tool that shows Members a personalized all-in monthly price, connects them with eXp Realty agents, and lets them earn 1 Bilt Point for every $2 of their home's closing price.
+
+## Company and Partnerships
+- [/careers](/careers): Open roles and information on working at Bilt.
+- [/p/licensing](/p/licensing): Licensing information related to the Bilt program.
+- [/p/realpage](/p/realpage): Information on Bilt's integration with RealPage for property managers in the Bilt Rewards Alliance.
+- [/p/preferred](/p/preferred): Information on Bilt's Preferred property or partner designation.
+- [/p/landing](/p/landing): General acquisition landing page introducing the Bilt membership.
+- [/p/asap](/p/asap): Information on a Bilt delivery or on-demand service partnership.
+
+## Optional
+- [/p/5Xfor5](/p/5Xfor5): Limited-time promotion — earn 5X Bilt Points for 5 days.
+- [/p/5Xfor30](/p/5Xfor30): Limited-time promotion — earn 5X Bilt Points for 30 days.
+- [/p/ext5Xfor30](/p/ext5Xfor30): Extended terms for the 5X Bilt Points for 30 days promotion.
+- [/p/ext5Xfor30all](/p/ext5Xfor30all): Extended 5X for 30 days across all spend categories.
+- [/p/ext5Xfor30dining](/p/ext5Xfor30dining): Extended 5X for 30 days on dining.
+- [/p/ext5Xfor30grocery](/p/ext5Xfor30grocery): Extended 5X for 30 days on groceries.

@@ -1,0 +1,160 @@
+generated: '2026-09-28'
+method: derived
+generator: derive-vocabulary.py
+source: openapi/_original/checkout-sdk.yml
+vocabulary:
+  name: BILT Domain Vocabulary
+  description: 'Terms declared by BILT''s own API contract: its resource groups, objects and enumerations, with the contract''s definitions. Derived,
+    not authored.'
+  version: '2026-09-28'
+  terms:
+  - term: Integration models
+    definition: 'Every model uses the same Checkout integration: sessions, SDK rendering, webhooks, and payment methods, including points. What
+      changes is who processes the payment. | &nbsp; | Bilt-processed | Gateway | |---|---|---| | Who processes | Bilt | Your processor accounts
+      | | Where funds settle | Bilt settles to you | Directly to your accounts | | Your processor''s reporting | — | Keeps working as today |'
+    tags:
+    - Resource Group
+    source: openapi/_original/checkout-sdk.yml
+  - term: Gateway mode
+    definition: 'Keep your processor relationships. In gateway mode, Bilt Checkout sends payment instructions to your existing processor accounts,
+      so payments are created on your accounts, settle to your accounts, and show up in your processor''s reporting as usual. Your integration
+      is the same as any Bilt Checkout merchant: sessions, the SDK, and webhooks. What''s different is setup: during onboarding we connect Bi'
+    tags:
+    - Resource Group
+    source: openapi/_original/checkout-sdk.yml
+  - term: Choosing an acquirer
+    definition: By default, card payments go to the acquirer you designate during onboarding. If you have merchant accounts with more than one
+      acquirer, Bilt can route across them using rules you set, such as failover, cost, or approval rates, so routing decisions stay with you.
+      Routing is configured for your account during onboarding. Email checkout@bilt.com to set it up.
+    tags:
+    - Resource Group
+    source: openapi/_original/checkout-sdk.yml
+  - term: One-time payments
+    definition: Open a checkout session that renders Bilt-hosted checkout in the Checkout SDK. The customer confirms the payment themselves; the
+      outcome arrives as a `checkout.session.*` webhook.
+    tags:
+    - Resource Group
+    source: openapi/_original/checkout-sdk.yml
+  - term: Headless payments
+    definition: Charge a customer's current default Bilt payment method with no Bilt UI, for subscriptions, autopay, or other off-session payments.
+      The outcome arrives as a `payment.*` webhook.
+    tags:
+    - Resource Group
+    source: openapi/_original/checkout-sdk.yml
+  - term: Default payment method
+    definition: Read-only lookup of a customer's current default payment-method summary for display and pre-flight checks. Bilt resolves the default
+      again at charge time, so it may change between lookup and payment.
+    tags:
+    - Resource Group
+    source: openapi/_original/checkout-sdk.yml
+  - term: Payment webhooks
+    definition: Standard Webhooks-signed, at-least-once payment and checkout-session events delivered from Bilt to your backend. See **Introduction
+      › Webhooks** for signing, verification, and retry behaviour.
+    tags:
+    - Resource Group
+    source: openapi/_original/checkout-sdk.yml
+  - term: CreatePaymentRequest
+    definition: Shared request body for one-time payment sessions and headless payments. Unknown properties are rejected with `400 INVALID_REQUEST`.
+    tags:
+    - Object
+    source: openapi/_original/checkout-sdk.yml#/components/schemas/CreatePaymentRequest
+  - term: DefaultPaymentMethodResponse
+    definition: 'Object declared by the contract with fields: data.'
+    tags:
+    - Object
+    source: openapi/_original/checkout-sdk.yml#/components/schemas/DefaultPaymentMethodResponse
+  - term: PaymentMethodSummary
+    definition: 'Object declared by the contract with fields: last4, brand, type, expiryMonth, expiryYear.'
+    tags:
+    - Object
+    source: openapi/_original/checkout-sdk.yml#/components/schemas/PaymentMethodSummary
+  - term: ExternalLineItem
+    definition: 'Object declared by the contract with fields: integratorSkuId, lineItemType, quantity, unitPriceCents, amountCents, currency.'
+    tags:
+    - Object
+    source: openapi/_original/checkout-sdk.yml#/components/schemas/ExternalLineItem
+  - term: IntegratorMetadata
+    definition: Optional integrator-owned correlation values (up to 20 keys, string values up to 500 characters). Echoed back on webhooks and
+      never interpreted by Bilt. Do not include secrets, credentials, card data, or personal data.
+    tags:
+    - Object
+    source: openapi/_original/checkout-sdk.yml#/components/schemas/IntegratorMetadata
+  - term: CheckoutSessionEnvelope
+    definition: 'Object declared by the contract with fields: data.'
+    tags:
+    - Object
+    source: openapi/_original/checkout-sdk.yml#/components/schemas/CheckoutSessionEnvelope
+  - term: CheckoutSession
+    definition: 'Object declared by the contract with fields: sessionId, mode, status, orderId, amounts, checkoutUrl, expiresAt.'
+    tags:
+    - Object
+    source: openapi/_original/checkout-sdk.yml#/components/schemas/CheckoutSession
+  - term: OrderAmounts
+    definition: 'Object declared by the contract with fields: subtotalCents, currency.'
+    tags:
+    - Object
+    source: openapi/_original/checkout-sdk.yml#/components/schemas/OrderAmounts
+  - term: HeadlessPaymentEnvelope
+    definition: 'Object declared by the contract with fields: data.'
+    tags:
+    - Object
+    source: openapi/_original/checkout-sdk.yml#/components/schemas/HeadlessPaymentEnvelope
+  - term: HeadlessPayment
+    definition: Acknowledgement that a headless payment was accepted for processing. The settled outcome arrives by webhook.
+    tags:
+    - Object
+    source: openapi/_original/checkout-sdk.yml#/components/schemas/HeadlessPayment
+  - term: HeadlessPaymentOutcomeEnvelope
+    definition: 'Object declared by the contract with fields: data.'
+    tags:
+    - Object
+    source: openapi/_original/checkout-sdk.yml#/components/schemas/HeadlessPaymentOutcomeEnvelope
+  - term: HeadlessPaymentSucceeded
+    definition: 'Object declared by the contract with fields: sessionId, mode, status, orderId, paymentId, amounts.'
+    tags:
+    - Object
+    source: openapi/_original/checkout-sdk.yml#/components/schemas/HeadlessPaymentSucceeded
+  - term: HeadlessPaymentFailed
+    definition: 'Object declared by the contract with fields: sessionId, mode, status, orderId, failure.'
+    tags:
+    - Object
+    source: openapi/_original/checkout-sdk.yml#/components/schemas/HeadlessPaymentFailed
+  - term: PaymentAmounts
+    definition: Split of the order total between eligible Bilt credits and the customer's card. `subtotalCents = creditsAppliedCents + chargedAmountCents`.
+      On a `202` acceptance `creditsAppliedCents` is `0`; the final split is on the `payment.succeeded` webhook. A synchronous `200` response
+      carries the final split.
+    tags:
+    - Object
+    source: openapi/_original/checkout-sdk.yml#/components/schemas/PaymentAmounts
+  - term: PaymentWebhookEvent
+    definition: 'Standard Webhooks payload. `type` is the discriminator: each event type fixes `data.mode` and `data.status` and states exactly
+      which fields are present, so a validator generated from this document rejects e.g. `payment.failed` without `failure` or `payment.succeeded`
+      without settled `amounts`.'
+    tags:
+    - Object
+    source: openapi/_original/checkout-sdk.yml#/components/schemas/PaymentWebhookEvent
+  - term: WebhookEventBase
+    definition: 'Object declared by the contract with fields: type, timestamp.'
+    tags:
+    - Object
+    source: openapi/_original/checkout-sdk.yml#/components/schemas/WebhookEventBase
+  - term: WebhookDataBase
+    definition: 'Object declared by the contract with fields: sessionId, orderId, integratorCustomerId, metadata.'
+    tags:
+    - Object
+    source: openapi/_original/checkout-sdk.yml#/components/schemas/WebhookDataBase
+  - term: PaymentFailure
+    definition: Why a headless charge could not be completed.
+    tags:
+    - Object
+    source: openapi/_original/checkout-sdk.yml#/components/schemas/PaymentFailure
+  - term: ErrorResponse
+    definition: Error envelope returned on every non-`2xx` response. Branch on the stable `code`, not the human-readable `message`.
+    tags:
+    - Object
+    source: openapi/_original/checkout-sdk.yml#/components/schemas/ErrorResponse
+  - term: ErrorDetail
+    definition: 'Object declared by the contract with fields: code, message, requestId, retryable.'
+    tags:
+    - Object
+    source: openapi/_original/checkout-sdk.yml#/components/schemas/ErrorDetail

@@ -1,0 +1,1775 @@
+openapi: 3.0.3
+info:
+  title: Bilt Checkout SDK
+  version: 0.2.0-draft
+  description: |
+    # Introduction
+
+    External backend contract for integrators using the Bilt Checkout SDK.
+    This reference is a separate top-level section from the Cart SDK.
+
+    The Checkout SDK supports two payment flows:
+
+    - **One-time payment (hosted)** — your backend opens a checkout session
+      and receives a short-lived `checkoutUrl`. You present it in the Checkout
+      SDK; Bilt renders the checkout UI, takes the payment, and reports the
+      outcome by webhook.
+    - **Headless payment** — your backend charges a customer without any Bilt
+      UI (subscriptions, autopay, invoices). Bilt charges the customer's
+      **current default Bilt payment method**, applies any eligible credits,
+      and reports the outcome by webhook — or, on the `/sync` variant, in the
+      response itself when the processor answers within the budget.
+    - **Default payment method lookup** — your backend can read a customer's
+      current default payment-method summary for display and pre-flight checks
+      before calling a headless payment. Bilt still resolves the default at
+      charge time.
+
+    Both flows take the **same request body**: your own stable customer
+    identifier, your own order identifier, a sealed list of line items, and
+    optional metadata. Bilt resolves your customer identifier to the linked
+    Bilt member; Bilt member ids are never part of this contract. You never
+    send, store, or receive a Bilt payment-method identifier — the customer
+    manages their default payment method in the Bilt app, and Bilt resolves
+    it at charge time.
+
+    **Webhooks are the source of truth for payment state.** A `201` or `202`
+    from either endpoint means Bilt accepted the request, not that funds
+    moved.
+
+    **Every endpoint here is backend-to-backend.** Call them from your
+    server using your client secret; never from a browser, mobile app, or
+    any code shipped to customers. The only thing that reaches a customer
+    device is the hosted `checkoutUrl`. The code samples in this reference
+    are server-side for that reason (curl by default).
+
+    > **Draft contract.** Items marked **[CHECK: …]** are pending
+    > confirmation before the contract is final. All examples use the
+    > fictional integrator Acme and synthetic sandbox values.
+
+    ## Base URLs
+
+    Your backend calls the Bilt partner (third-party) gateway. The `servers`
+    list for this document is that gateway.
+
+    | Environment | Base URL |
+    | ----------- | -------- |
+    | Staging | `https://staging.partnerapi.biltrewards.com` |
+    | Production | `https://partnerapi.biltrewards.com` |
+
+    [CHECK: the `/partner/checkout/v1/checkout-sessions`,
+    `/partner/checkout/v1/headless-payments`, and
+    `/partner/checkout/v1/headless-payments/sync` routes are not yet registered
+    on the gateway; paths are final in shape but pending registration.]
+
+    ## Authentication
+
+    Partner endpoints are authenticated server-to-server with **OAuth 2.0
+    client credentials** issued by Bilt's `enterprise-partner` Keycloak
+    realm. Bilt registers your backend as a confidential client during
+    onboarding and issues a **client id** and **client secret**. Tokens are
+    issued with an audience Bilt assigns to your client at onboarding; the gateway validates the token's
+    signature, issuer, audience, and expiry, and Bilt identifies the partner
+    from the token's `azp` (authorized party) claim; the path carries no
+    partner identifier. You do not
+    request the audience or any scope yourself: Bilt assigns the audience to
+    your client at onboarding, and no scopes are required — a plain
+    client-credentials grant with your client id and secret is enough. The
+    values you need from Bilt are the token endpoint for the environment, your
+    client id, and your client secret. A token minted for a different Bilt
+    partner API (for example the Cart SDK's
+    `bilt-cart-partner-api` audience) is rejected on these routes.
+
+    Mint an access token, then send it as `Authorization: Bearer
+    <access_token>` on every request:
+
+    ```bash
+    curl -s -X POST \
+      'https://staging.biltrewards.com/realms/enterprise-partner/protocol/openid-connect/token' \
+      -H 'Content-Type: application/x-www-form-urlencoded' \
+      -d 'grant_type=client_credentials' \
+      -d "client_id=$BILT_CLIENT_ID" \
+      --data-urlencode "client_secret=$BILT_CLIENT_SECRET"
+    ```
+
+    | | |
+    | --- | --- |
+    | Grant type | `client_credentials` |
+    | Token endpoint (staging) | `https://staging.biltrewards.com/realms/enterprise-partner/protocol/openid-connect/token` |
+    | Token endpoint (production) | `https://www.bilt.com/realms/enterprise-partner/protocol/openid-connect/token` |
+    | Audience | assigned at onboarding (bound to your client; you never send it) |
+    | Scopes | None required — the client itself is the grant |
+    | Access-token lifetime | 15 minutes [CHECK: confirm realm client setting] |
+
+    Cache the token and refresh it shortly before expiry. Keep the client
+    secret server-side only. Bilt's gateway answers `401` itself when the
+    token is missing, expired, or carries the wrong audience.
+
+    ## Idempotency
+
+    Both endpoints accept an optional `Idempotency-Key` header (any string up
+    to 255 characters; a fresh UUID per attempt is recommended). Retrying with
+    the same key and the same body returns the original result instead of
+    creating a second session or charge. Reusing a key with a different body
+    is rejected with `409 IDEMPOTENCY_CONFLICT`. Always send one for headless
+    payments — a network timeout on a charge is exactly the case it protects
+    you from.
+
+    ## Errors
+
+    Every non-`2xx` response from Bilt carries the same JSON envelope:
+
+    ```json
+    {
+      "error": {
+        "code": "CUSTOMER_NOT_FOUND",
+        "message": "No linked Bilt member for integratorCustomerId",
+        "requestId": "request_sandbox_123",
+        "retryable": false
+      }
+    }
+    ```
+
+    Branch on `code`, never on `message`. `retryable` answers "would sending
+    the same request again help?" — it is `false` for every error that needs
+    somebody to act first (fix the request, link the customer, add a payment
+    method), and `true` for transient Bilt-side failures. Quote `requestId`
+    when contacting Bilt.
+
+    | HTTP | `code` | `retryable` | Meaning |
+    | ---- | ------ | ----------- | ------- |
+    | 400 | `INVALID_REQUEST` | no | Malformed body, unknown field, mixed or unsupported currency, duplicate SKU, over-long `Idempotency-Key`. `message` names the offending field. |
+    | 401 | `UNAUTHENTICATED` | no | Missing, expired, or wrong-audience access token. |
+    | 404 | `CUSTOMER_NOT_FOUND` | no | `integratorCustomerId` is not linked to a Bilt member. Send the customer through account linking first. |
+    | 404 | `PAYMENT_METHOD_NOT_FOUND` | no | Headless payments and the default payment method lookup. The member has no default Bilt payment method. Ask them to add one in the Bilt app. |
+    | 409 | `IDEMPOTENCY_CONFLICT` | no | `Idempotency-Key` reused with a different body. |
+    | 409 | `SESSION_ALREADY_COMPLETED` | no | The session this key identifies has already reached a terminal state. |
+    | 429 | `RATE_LIMIT_EXCEEDED` | yes | Back off and honour `Retry-After`. |
+    | 500 | `INTERNAL_ERROR` | no | Unexpected Bilt error; do not retry blindly — check the webhook for the request's outcome first. |
+    | 503 | `PAYMENT_UNAVAILABLE` | yes | Bilt could not reach the customer's wallet or a required dependency. Retry with backoff. |
+
+    Currently only `USD` line items are accepted; any other currency is an
+    `INVALID_REQUEST`. A card that Bilt cannot charge is **not** a synchronous
+    error — the processor's decline arrives as a `payment.failed` webhook.
+
+    ## Webhooks
+
+    Bilt delivers payment and session events to a single HTTPS endpoint you
+    register during onboarding (for example
+    `POST https://api.acme.example/webhooks/bilt`). Delivery follows the
+    [Standard Webhooks](https://github.com/standard-webhooks/standard-webhooks/blob/main/spec/standard-webhooks.md)
+    specification (v1.0.0) for headers, signing, and retries, so any Standard
+    Webhooks verification library works unchanged.
+
+    ### Signing and authentication
+
+    The signature **is** the authentication: webhooks carry no bearer token,
+    and you must not accept an unsigned or badly-signed delivery. Every
+    delivery carries three headers:
+
+    | Header | Value |
+    | ------ | ----- |
+    | `webhook-id` | Unique message id (for example `msg_2KWPBgLlAfxdpx2AI54pPJ85f4W`). Stable across retries of the same event — use it as your idempotency key. |
+    | `webhook-timestamp` | Unix timestamp in **seconds** at which the delivery attempt was made. |
+    | `webhook-signature` | Space-separated list of `v1,<base64>` signatures. More than one is present only during a signing-secret rotation; accept the delivery if **any** of them verifies. |
+
+    To verify:
+
+    1. Take the **raw** request body bytes — do not parse and re-serialize.
+    2. Build the signed content `"{webhook-id}.{webhook-timestamp}.{rawBody}"`.
+    3. Compute `HMAC-SHA256` of that string with your signing secret. Bilt
+       issues the secret in the Standard Webhooks form `whsec_<base64>`; the
+       key is the base64-decoded bytes after the `whsec_` prefix.
+    4. Base64-encode the result and compare it to each `v1,…` entry using a
+       constant-time comparison.
+    5. Reject if `webhook-timestamp` is more than **5 minutes** from your
+       clock (replay protection).
+    6. Process each `webhook-id` at most once.
+
+    Bilt issues one signing secret per registered endpoint. Rotation is
+    zero-downtime: Bilt signs with both the new and the old secret for a
+    window, and your receiver keeps working as long as it accepts any
+    matching signature. Deliveries are only ever made over HTTPS.
+
+    ### Payload
+
+    The body is JSON with the Standard Webhooks shape: `type`, `timestamp`,
+    and `data`.
+
+    | `type` | Flow | When it fires |
+    | ------ | ---- | ------------- |
+    | `checkout.session.completed` | One-time payment | The customer paid in the hosted checkout. Terminal. |
+    | `checkout.session.cancelled` | One-time payment | The customer left without paying. Terminal. |
+    | `checkout.session.expired` | One-time payment | The session reached `expiresAt` unpaid. Terminal. |
+    | `payment.succeeded` | Headless | The charge settled; `data.amounts` carries the final split between credits and the card. Terminal. |
+    | `payment.failed` | Headless | The charge could not be completed (declined, no chargeable card). `data.failure` says why and whether a new attempt may succeed. Terminal for this `sessionId`. |
+
+    Every event's `data` carries `sessionId`, `mode`, `orderId`,
+    `integratorCustomerId`, and `status`, so you can correlate on either your
+    `orderId` or Bilt's `sessionId`. See the `PaymentWebhookEvent` schema and
+    the callback examples on each operation for the full shape.
+
+    [CHECK: `payment.succeeded` / `payment.failed` are the proposed headless
+    event names; the hosted `checkout.session.*` names are those already
+    used by the Cart SDK.]
+
+    ### Delivery and retries
+
+    - Delivery is **at least once**. Deduplicate on `webhook-id`.
+    - Acknowledge with any `2xx` **before** doing slow work; Bilt times an
+      attempt out after **15 seconds**.
+    - Any non-`2xx` response or timeout is retried with exponential backoff
+      and jitter over roughly **three days** — Standard Webhooks' reference
+      schedule: immediately, 5 s, 5 min, 30 min, 2 h, 5 h, 10 h, 14 h, 20 h,
+      24 h. [CHECK: final schedule to be published with the platform webhook
+      service.]
+    - Respond `410 Gone` to tell Bilt to stop delivering to that endpoint;
+      `429` and `503` with `Retry-After` slow Bilt down without counting as
+      a failure of the endpoint.
+    - Ordering is not guaranteed. Order on the payload `timestamp`, and
+      treat the terminal events above as final for their `sessionId`.
+    - Bilt notifies you out of band and disables the endpoint if delivery
+      fails continuously; failed deliveries can be replayed on request.
+
+    ## Onboarding
+
+    1. Bilt registers your backend as a confidential client in the
+       `enterprise-partner` realm and issues your client id and secret.
+    2. You register your webhook endpoint URL and receive its `whsec_`
+       signing secret.
+    3. You implement token minting, session creation and/or headless
+       payments with an `Idempotency-Key` per attempt, and signature
+       verification on your receiver.
+    4. Both teams complete end-to-end testing in staging.
+
+servers:
+  - url: https://partnerapi.biltrewards.com
+    description: Production — partner (third-party) gateway
+  - url: https://staging.partnerapi.biltrewards.com
+    description: Staging — partner (third-party) gateway
+
+security:
+  - checkoutPartnerOAuth: []
+
+x-tagGroups:
+  - name: Checkout SDK
+    tags:
+      - Integration models
+      - Gateway mode
+      - Choosing an acquirer
+      - One-time payments
+      - Headless payments
+      - Default payment method
+      - Payment webhooks
+
+tags:
+  - name: Integration models
+    description: |
+      Every model uses the same Checkout integration: sessions, SDK
+      rendering, webhooks, and payment methods, including points. What
+      changes is who processes the payment.
+
+      | &nbsp; | Bilt-processed | Gateway |
+      |---|---|---|
+      | Who processes | Bilt | Your processor accounts |
+      | Where funds settle | Bilt settles to you | Directly to your accounts |
+      | Your processor's reporting | — | Keeps working as today |
+      | Setup | Bilt merchant onboarding | Connect your processor accounts (sales-assisted) |
+
+      Integrating as a gateway? See [Gateway
+      mode](#checkout-sdk/tag/gateway-mode), or email checkout@bilt.com.
+  - name: Gateway mode
+    description: |
+      Keep your processor relationships. In gateway mode, Bilt Checkout
+      sends payment instructions to your existing processor accounts, so
+      payments are created on your accounts, settle to your accounts, and
+      show up in your processor's reporting as usual.
+
+      Your integration is the same as any Bilt Checkout merchant:
+      sessions, the SDK, and webhooks. What's different is setup: during
+      onboarding we connect Bilt to your processor accounts.
+
+      ### Payment methods
+
+      Cards, wallets, and bank payments on supported processors. Other
+      rails, such as wire, are available by arrangement.
+
+      ### Crypto
+
+      Bring your wallets and crypto providers, and we'll connect to them.
+
+      ### Getting started
+
+      Gateway setup is sales-assisted, and some processors require you to
+      start the connection from your side. Email checkout@bilt.com.
+  - name: Choosing an acquirer
+    description: |
+      By default, card payments go to the acquirer you designate during
+      onboarding. If you have merchant accounts with more than one
+      acquirer, Bilt can route across them using rules you set, such as
+      failover, cost, or approval rates, so routing decisions stay with
+      you. Routing is configured for your account during onboarding. Email
+      checkout@bilt.com to set it up.
+  - name: One-time payments
+    description: |
+      Open a checkout session that renders Bilt-hosted checkout in the
+      Checkout SDK. The customer confirms the payment themselves; the
+      outcome arrives as a `checkout.session.*` webhook.
+  - name: Headless payments
+    description: |
+      Charge a customer's current default Bilt payment method with no Bilt
+      UI, for subscriptions, autopay, or other off-session payments. The
+      outcome arrives as a `payment.*` webhook.
+  - name: Default payment method
+    description: |
+      Read-only lookup of a customer's current default payment-method
+      summary for display and pre-flight checks. Bilt resolves the default
+      again at charge time, so it may change between lookup and payment.
+  - name: Payment webhooks
+    description: |
+      Standard Webhooks-signed, at-least-once payment and checkout-session
+      events delivered from Bilt to your backend. See **Introduction ›
+      Webhooks** for signing, verification, and retry behaviour.
+
+paths:
+  /partner/checkout/v1/checkout-sessions:
+    post:
+      tags: [One-time payments]
+      summary: Create a one-time payment checkout session
+      operationId: createCheckoutSession
+      description: |
+        Creates a hosted checkout session for one order and returns a
+        short-lived `checkoutUrl` to present in the Checkout SDK. Bilt
+        resolves `integratorCustomerId` to the linked Bilt member and renders
+        their payment methods, eligible credits, and the order summary inside
+        the hosted checkout — your app renders none of this.
+
+        The session stays `OPEN` until the customer pays, abandons it, or it
+        reaches `expiresAt`; each of those outcomes is delivered as a
+        `checkout.session.*` webhook. Session TTL is configured per
+        integrator during onboarding.
+
+        `201` means the session exists. It does not mean the customer has
+        paid — wait for `checkout.session.completed`.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePaymentRequest'
+            example:
+              integratorCustomerId: acme_customer_sandbox_123
+              orderId: acme_order_sandbox_456
+              lineItems:
+                - integratorSkuId: acme_membership_monthly
+                  lineItemType: PRODUCT
+                  quantity: 1
+                  unitPriceCents: 4900
+                  amountCents: 4900
+                  currency: USD
+              metadata:
+                correlationId: acme_correlation_sandbox_789
+      responses:
+        '201':
+          description: Checkout session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutSessionEnvelope'
+              example:
+                data:
+                  sessionId: checkout_session_sandbox_123
+                  mode: hosted
+                  status: OPEN
+                  orderId: acme_order_sandbox_456
+                  amounts:
+                    subtotalCents: 4900
+                    currency: USD
+                  checkoutUrl: https://checkout.sandbox.example.invalid/s/session_sandbox_token
+                  expiresAt: '2026-08-24T22:30:00Z'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/CustomerNotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+      callbacks:
+        # Deliveries go to the HTTPS endpoint you register at onboarding; it is
+        # not derivable from the request, so the key below is a placeholder.
+        checkoutSessionCompleted:
+          'https://acme.example.invalid/webhooks/bilt':
+            post:
+              tags: [Payment webhooks]
+              summary: checkout.session.completed
+              operationId: onCheckoutSessionCompleted
+              security: []
+              parameters:
+                - $ref: '#/components/parameters/WebhookId'
+                - $ref: '#/components/parameters/WebhookTimestamp'
+                - $ref: '#/components/parameters/WebhookSignature'
+              requestBody:
+                required: true
+                content:
+                  application/json:
+                    schema:
+                      $ref: '#/components/schemas/PaymentWebhookEvent'
+                    example:
+                      type: checkout.session.completed
+                      timestamp: '2026-08-24T22:15:12.344Z'
+                      data:
+                        sessionId: checkout_session_sandbox_123
+                        mode: hosted
+                        orderId: acme_order_sandbox_456
+                        integratorCustomerId: acme_customer_sandbox_123
+                        status: COMPLETED
+                        paymentId: payment_sandbox_789
+                        amounts:
+                          subtotalCents: 4900
+                          creditsAppliedCents: 500
+                          chargedAmountCents: 4400
+                          currency: USD
+              responses:
+                '2xx':
+                  description: Event acknowledged; Bilt will not redeliver it.
+        checkoutSessionCancelledOrExpired:
+          'https://acme.example.invalid/webhooks/bilt':
+            post:
+              tags: [Payment webhooks]
+              summary: checkout.session.cancelled / checkout.session.expired
+              operationId: onCheckoutSessionEnded
+              security: []
+              parameters:
+                - $ref: '#/components/parameters/WebhookId'
+                - $ref: '#/components/parameters/WebhookTimestamp'
+                - $ref: '#/components/parameters/WebhookSignature'
+              requestBody:
+                required: true
+                content:
+                  application/json:
+                    schema:
+                      $ref: '#/components/schemas/PaymentWebhookEvent'
+                    examples:
+                      cancelled:
+                        value:
+                          type: checkout.session.cancelled
+                          timestamp: '2026-08-24T22:20:00.000Z'
+                          data:
+                            sessionId: checkout_session_sandbox_123
+                            mode: hosted
+                            orderId: acme_order_sandbox_456
+                            integratorCustomerId: acme_customer_sandbox_123
+                            status: CANCELLED
+                      expired:
+                        value:
+                          type: checkout.session.expired
+                          timestamp: '2026-08-24T22:30:00.000Z'
+                          data:
+                            sessionId: checkout_session_sandbox_123
+                            mode: hosted
+                            orderId: acme_order_sandbox_456
+                            integratorCustomerId: acme_customer_sandbox_123
+                            status: EXPIRED
+              responses:
+                '2xx':
+                  description: Event acknowledged; Bilt will not redeliver it.
+
+  /partner/checkout/v1/headless-payments:
+    post:
+      tags: [Headless payments]
+      summary: Create a headless payment
+      operationId: createHeadlessPayment
+      description: |
+        Charges the customer's **current default Bilt payment method** for
+        the supplied line items, with no Bilt UI. Bilt resolves
+        `integratorCustomerId` to the linked Bilt member, reads their default
+        payment method at charge time, applies eligible credits
+        automatically, and charges the remainder to the card.
+
+        There is deliberately no payment-method field in this request. The
+        customer chooses and maintains their default payment method in the
+        Bilt app; if they replace the card, the next payment uses the new one
+        with no change on your side. A request containing an unknown field
+        (including a `paymentMethodId`) is rejected with `400
+        INVALID_REQUEST`.
+
+        `202` means Bilt accepted the request and is processing the charge.
+        Use `/partner/checkout/v1/headless-payments/sync` when you need the
+        outcome in the request cycle; it can also return `202` if its
+        processing budget is exhausted. The final outcome — settled amounts, or a decline — arrives as a
+        `payment.succeeded` or `payment.failed` webhook. Until then the
+        payment is `PROCESSING`; `amounts.creditsAppliedCents` in the `202`
+        body is a placeholder of `0` and the final credit split is in the
+        webhook.
+
+        **Always send an `Idempotency-Key`** so that a retry after a timeout
+        cannot charge the customer twice.
+
+        Validation: all `lineItems` must share one `currency` (currently only
+        `USD`), `integratorSkuId` values must be unique within a request, and
+        `quantity` must be at least 1. `unitPriceCents` may be `0` for a
+        bundled or promotional line but never negative.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePaymentRequest'
+            example:
+              integratorCustomerId: acme_customer_sandbox_123
+              orderId: acme_subscription_invoice_sandbox_2026_08
+              lineItems:
+                - integratorSkuId: acme_membership_monthly
+                  lineItemType: PRODUCT
+                  quantity: 1
+                  unitPriceCents: 4900
+                  amountCents: 4900
+                  currency: USD
+              metadata:
+                subscriptionId: acme_subscription_sandbox_456
+      responses:
+        '202':
+          description: Payment accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HeadlessPaymentEnvelope'
+              example:
+                data:
+                  sessionId: checkout_session_sandbox_headless_123
+                  mode: headless
+                  status: PROCESSING
+                  orderId: acme_subscription_invoice_sandbox_2026_08
+                  amounts:
+                    subtotalCents: 4900
+                    creditsAppliedCents: 0
+                    chargedAmountCents: 4900
+                    currency: USD
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/HeadlessNotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+      callbacks:
+        paymentSucceeded:
+          'https://acme.example.invalid/webhooks/bilt':
+            post:
+              tags: [Payment webhooks]
+              summary: payment.succeeded
+              operationId: onPaymentSucceeded
+              security: []
+              parameters:
+                - $ref: '#/components/parameters/WebhookId'
+                - $ref: '#/components/parameters/WebhookTimestamp'
+                - $ref: '#/components/parameters/WebhookSignature'
+              requestBody:
+                required: true
+                content:
+                  application/json:
+                    schema:
+                      $ref: '#/components/schemas/PaymentWebhookEvent'
+                    example:
+                      type: payment.succeeded
+                      timestamp: '2026-08-24T22:15:12.344Z'
+                      data:
+                        sessionId: checkout_session_sandbox_headless_123
+                        mode: headless
+                        orderId: acme_subscription_invoice_sandbox_2026_08
+                        integratorCustomerId: acme_customer_sandbox_123
+                        status: SUCCEEDED
+                        paymentId: payment_sandbox_790
+                        amounts:
+                          subtotalCents: 4900
+                          creditsAppliedCents: 500
+                          chargedAmountCents: 4400
+                          currency: USD
+              responses:
+                '2xx':
+                  description: Event acknowledged; Bilt will not redeliver it.
+        paymentFailed:
+          'https://acme.example.invalid/webhooks/bilt':
+            post:
+              tags: [Payment webhooks]
+              summary: payment.failed
+              operationId: onPaymentFailed
+              security: []
+              parameters:
+                - $ref: '#/components/parameters/WebhookId'
+                - $ref: '#/components/parameters/WebhookTimestamp'
+                - $ref: '#/components/parameters/WebhookSignature'
+              requestBody:
+                required: true
+                content:
+                  application/json:
+                    schema:
+                      $ref: '#/components/schemas/PaymentWebhookEvent'
+                    example:
+                      type: payment.failed
+                      timestamp: '2026-08-24T22:15:12.344Z'
+                      data:
+                        sessionId: checkout_session_sandbox_headless_124
+                        mode: headless
+                        orderId: acme_subscription_invoice_sandbox_2026_09
+                        integratorCustomerId: acme_customer_sandbox_123
+                        status: FAILED
+                        failure:
+                          code: CARD_DECLINED
+                          message: The card issuer declined the charge
+                          retryable: true
+              responses:
+                '2xx':
+                  description: Event acknowledged; Bilt will not redeliver it.
+
+  /partner/checkout/v1/headless-payments/sync:
+    post:
+      tags: [Headless payments]
+      summary: Create a headless payment and wait for the outcome
+      operationId: createHeadlessPaymentSync
+      description: |
+        Charges the customer's **current default Bilt payment method** and
+        waits for the processor before responding. A settled charge or decline
+        is returned in the response instead of being delivered only by
+        webhook.
+
+        Use this endpoint when you need the answer in the request cycle, such
+        as checkout-time add-ons or retries driven by a customer action. Use
+        the async endpoint for batch or subscription runs. The request is held
+        while the processor answers, so this endpoint has a lower rate limit
+        than the async endpoint and clients must allow a longer timeout.
+        [CHECK: sync rate limit and processing budget (proposed 30 s) to be
+        confirmed by Payments.]
+
+        If the processor does not answer within the budget, Bilt returns
+        `202 PROCESSING` exactly like the async endpoint and the outcome
+        arrives by webhook — handle both. Webhooks (`payment.succeeded` /
+        `payment.failed`) are sent for sync payments too, so one reconciliation
+        path covers both endpoints.
+
+        **Always send an `Idempotency-Key`**. On a retry after a timeout, the
+        same key returns the existing payment's current status rather than
+        charging again.
+
+        Validation: all `lineItems` must share one `currency` (currently only
+        `USD`), `integratorSkuId` values must be unique within a request, and
+        `quantity` must be at least 1. `unitPriceCents` may be `0` for a
+        bundled or promotional line but never negative.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePaymentRequest'
+            example:
+              integratorCustomerId: acme_customer_sandbox_123
+              orderId: acme_subscription_invoice_sandbox_2026_08
+              lineItems:
+                - integratorSkuId: acme_membership_monthly
+                  lineItemType: PRODUCT
+                  quantity: 1
+                  unitPriceCents: 4900
+                  amountCents: 4900
+                  currency: USD
+              metadata:
+                subscriptionId: acme_subscription_sandbox_456
+      responses:
+        '200':
+          description: Payment settled or declined
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HeadlessPaymentOutcomeEnvelope'
+              examples:
+                succeeded:
+                  value:
+                    data:
+                      sessionId: checkout_session_sandbox_headless_123
+                      mode: headless
+                      status: SUCCEEDED
+                      orderId: acme_subscription_invoice_sandbox_2026_08
+                      paymentId: payment_sandbox_789
+                      amounts:
+                        subtotalCents: 4900
+                        creditsAppliedCents: 500
+                        chargedAmountCents: 4400
+                        currency: USD
+                declined:
+                  value:
+                    data:
+                      sessionId: checkout_session_sandbox_headless_124
+                      mode: headless
+                      status: FAILED
+                      orderId: acme_subscription_invoice_sandbox_2026_09
+                      failure:
+                        code: CARD_DECLINED
+                        message: The card issuer declined the charge
+                        retryable: true
+        '202':
+          description: Processing budget exhausted; outcome will arrive by webhook
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HeadlessPaymentEnvelope'
+              example:
+                data:
+                  sessionId: checkout_session_sandbox_headless_123
+                  mode: headless
+                  status: PROCESSING
+                  orderId: acme_subscription_invoice_sandbox_2026_08
+                  amounts:
+                    subtotalCents: 4900
+                    creditsAppliedCents: 0
+                    chargedAmountCents: 4900
+                    currency: USD
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/HeadlessNotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+      callbacks:
+        paymentSucceeded:
+          'https://acme.example.invalid/webhooks/bilt':
+            post:
+              tags: [Payment webhooks]
+              summary: payment.succeeded
+              operationId: onPaymentSucceededSync
+              security: []
+              parameters:
+                - $ref: '#/components/parameters/WebhookId'
+                - $ref: '#/components/parameters/WebhookTimestamp'
+                - $ref: '#/components/parameters/WebhookSignature'
+              requestBody:
+                required: true
+                content:
+                  application/json:
+                    schema:
+                      $ref: '#/components/schemas/PaymentWebhookEvent'
+                    example:
+                      type: payment.succeeded
+                      timestamp: '2026-08-24T22:15:12.344Z'
+                      data:
+                        sessionId: checkout_session_sandbox_headless_123
+                        mode: headless
+                        orderId: acme_subscription_invoice_sandbox_2026_08
+                        integratorCustomerId: acme_customer_sandbox_123
+                        status: SUCCEEDED
+                        paymentId: payment_sandbox_789
+                        amounts:
+                          subtotalCents: 4900
+                          creditsAppliedCents: 500
+                          chargedAmountCents: 4400
+                          currency: USD
+              responses:
+                '2xx':
+                  description: Event acknowledged; Bilt will not redeliver it.
+        paymentFailed:
+          'https://acme.example.invalid/webhooks/bilt':
+            post:
+              tags: [Payment webhooks]
+              summary: payment.failed
+              operationId: onPaymentFailedSync
+              security: []
+              parameters:
+                - $ref: '#/components/parameters/WebhookId'
+                - $ref: '#/components/parameters/WebhookTimestamp'
+                - $ref: '#/components/parameters/WebhookSignature'
+              requestBody:
+                required: true
+                content:
+                  application/json:
+                    schema:
+                      $ref: '#/components/schemas/PaymentWebhookEvent'
+                    example:
+                      type: payment.failed
+                      timestamp: '2026-08-24T22:15:12.344Z'
+                      data:
+                        sessionId: checkout_session_sandbox_headless_124
+                        mode: headless
+                        orderId: acme_subscription_invoice_sandbox_2026_09
+                        integratorCustomerId: acme_customer_sandbox_123
+                        status: FAILED
+                        failure:
+                          code: CARD_DECLINED
+                          message: The card issuer declined the charge
+                          retryable: true
+              responses:
+                '2xx':
+                  description: Event acknowledged; Bilt will not redeliver it.
+
+  /partner/checkout/v1/customers/{integratorCustomerId}/default-payment-method:
+    get:
+      tags: [Default payment method]
+      summary: Get a customer's default payment method
+      operationId: getDefaultPaymentMethod
+      description: |
+        Read-only lookup of the customer's current default payment-method
+        summary for display and pre-flight checks. Use it to check that the
+        customer has a chargeable default before calling
+        `/partner/checkout/v1/headless-payments`. This endpoint does not accept
+        a payment method as input. Bilt still resolves the default itself at
+        charge time, so the card can change between this lookup and the charge.
+
+        **[CHECK]** This endpoint is not yet implemented in checkout-svc or
+        registered on the gateway; the contract below is the proposed shape.
+      parameters:
+        - name: integratorCustomerId
+          in: path
+          required: true
+          description: Your stable identifier for the customer.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+            pattern: '^[A-Za-z0-9_.:~-]+$'
+          example: acme_customer_sandbox_123
+      responses:
+        '200':
+          description: Default payment method found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DefaultPaymentMethodResponse'
+              example:
+                data:
+                  integratorCustomerId: acme_customer_sandbox_123
+                  paymentMethod:
+                    last4: '4242'
+                    brand: VISA
+                    type: CREDIT
+                    expiryMonth: 12
+                    expiryYear: 2028
+                  updatedAt: '2026-08-24T22:00:00Z'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/HeadlessNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  securitySchemes:
+    checkoutPartnerOAuth:
+      type: oauth2
+      description: |
+        OAuth 2.0 client credentials against the `enterprise-partner`
+        Keycloak realm. Bilt issues your client id and client secret during
+        onboarding; tokens carry an audience Bilt assigns to your client at
+        onboarding, and Bilt
+        identifies your integration from the token's `azp` claim. You do not
+        request the audience or any scope yourself: Bilt assigns the audience
+        to your client at onboarding, and no scopes are required — a plain
+        client-credentials grant with your client id and secret is enough. The
+        values you need from Bilt are the token endpoint for the environment,
+        your client id, and your client secret. Send the result as
+        `Authorization: Bearer <access_token>`. The token URL below is
+        **staging** — production is
+        `https://www.bilt.com/realms/enterprise-partner/protocol/openid-connect/token`.
+        Keep the client secret server-side only.
+      flows:
+        clientCredentials:
+          tokenUrl: https://staging.biltrewards.com/realms/enterprise-partner/protocol/openid-connect/token
+          scopes: {}
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |
+        Optional but strongly recommended — required in practice for headless
+        payments. Any string up to 255 characters; a fresh UUID per attempt
+        is the recommended form. A retry with the same key and body returns
+        the original result; the same key with a different body is rejected
+        with `409 IDEMPOTENCY_CONFLICT`. Keys are scoped to your client.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+        example: 6f6b1afd-22e0-4137-a096-b15e41cdc890
+
+    WebhookId:
+      name: webhook-id
+      in: header
+      required: true
+      description: |
+        Unique message id, stable across redeliveries of the same event.
+        Deduplicate on it.
+      schema:
+        type: string
+        example: msg_2KWPBgLlAfxdpx2AI54pPJ85f4W
+
+    WebhookTimestamp:
+      name: webhook-timestamp
+      in: header
+      required: true
+      description: |
+        Unix timestamp in seconds of this delivery attempt. Reject deliveries
+        more than 5 minutes from your clock.
+      schema:
+        type: integer
+        format: int64
+        example: 1787609712
+
+    WebhookSignature:
+      name: webhook-signature
+      in: header
+      required: true
+      description: |
+        Space-separated `v1,<base64>` signatures, each the base64
+        `HMAC-SHA256` of `"{webhook-id}.{webhook-timestamp}.{rawBody}"`
+        keyed by your `whsec_` signing secret. Accept the delivery if any one
+        verifies (constant-time comparison). Multiple entries appear only
+        during a secret rotation.
+      schema:
+        type: string
+        example: v1,K5oZfzN95Z9UVu1EsfQmfVNQhnkZ2pj9o9NDN/H/pI4=
+
+  responses:
+    InvalidRequest:
+      description: |
+        The request is malformed. `message` names the offending field.
+        Not retryable without changing the request.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            invalidField:
+              value:
+                error:
+                  code: INVALID_REQUEST
+                  message: lineItems[0].quantity must be at least 1
+                  requestId: request_sandbox_123
+                  retryable: false
+            unknownField:
+              value:
+                error:
+                  code: INVALID_REQUEST
+                  message: Unrecognized field "paymentMethodId"
+                  requestId: request_sandbox_124
+                  retryable: false
+            mixedCurrency:
+              value:
+                error:
+                  code: INVALID_REQUEST
+                  message: All lineItems must use the same currency; only USD is supported
+                  requestId: request_sandbox_125
+                  retryable: false
+
+    Unauthenticated:
+      description: Missing, expired, or wrong-audience access token.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: UNAUTHENTICATED
+              message: Missing or invalid access token
+              requestId: request_sandbox_126
+              retryable: false
+
+    CustomerNotFound:
+      description: |
+        `integratorCustomerId` is not linked to a Bilt member. Send the
+        customer through account linking, then retry.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: CUSTOMER_NOT_FOUND
+              message: No linked Bilt member for integratorCustomerId
+              requestId: request_sandbox_127
+              retryable: false
+
+    HeadlessNotFound:
+      description: |
+        The customer is not linked to a Bilt member, or the member has no
+        default Bilt payment method to charge.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            customerNotFound:
+              value:
+                error:
+                  code: CUSTOMER_NOT_FOUND
+                  message: No linked Bilt member for integratorCustomerId
+                  requestId: request_sandbox_128
+                  retryable: false
+            paymentMethodNotFound:
+              value:
+                error:
+                  code: PAYMENT_METHOD_NOT_FOUND
+                  message: The member has no default payment method
+                  requestId: request_sandbox_129
+                  retryable: false
+
+    Conflict:
+      description: Idempotency conflict, or the session is already terminal.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            idempotencyConflict:
+              value:
+                error:
+                  code: IDEMPOTENCY_CONFLICT
+                  message: Idempotency-Key was already used with a different request body
+                  requestId: request_sandbox_130
+                  retryable: false
+            sessionAlreadyCompleted:
+              value:
+                error:
+                  code: SESSION_ALREADY_COMPLETED
+                  message: The checkout session is already in a terminal state
+                  requestId: request_sandbox_131
+                  retryable: false
+
+    RateLimited:
+      description: |
+        Too many requests. Gateway-enforced; retry with backoff, honouring
+        `Retry-After` when present. The sync endpoint's limit is lower than
+        the async endpoint's. Per-integrator quotas are agreed during
+        onboarding when your volume warrants one.
+      headers:
+        Retry-After:
+          description: Number of seconds to wait before retrying.
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: Too many requests
+              requestId: request_sandbox_132
+              retryable: true
+
+    InternalError:
+      description: |
+        Unexpected Bilt error. For headless payments, do not retry blindly:
+        the charge may have been accepted — check for a `payment.*` webhook
+        for the same `orderId` first, and retry with the **same**
+        `Idempotency-Key`.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: Unexpected server error
+              requestId: request_sandbox_133
+              retryable: false
+
+    ServiceUnavailable:
+      description: |
+        Bilt could not reach the customer's wallet or another required
+        dependency. Nothing was charged. Retry with backoff.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: PAYMENT_UNAVAILABLE
+              message: Payment could not be attempted; try again shortly
+              requestId: request_sandbox_134
+              retryable: true
+
+  schemas:
+    CreatePaymentRequest:
+      type: object
+      additionalProperties: false
+      description: |
+        Shared request body for one-time payment sessions and headless
+        payments. Unknown properties are rejected with `400 INVALID_REQUEST`.
+      required:
+        - integratorCustomerId
+        - orderId
+        - lineItems
+      properties:
+        integratorCustomerId:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: '^[A-Za-z0-9_.:~-]+$'
+          description: |
+            Your stable identifier for the customer — the same key you use
+            for account linking. Bilt resolves it to the linked Bilt member.
+            Never send a Bilt member id.
+          example: acme_customer_sandbox_123
+        orderId:
+          type: string
+          minLength: 1
+          maxLength: 255
+          pattern: '^[A-Za-z0-9_.:~-]+$'
+          description: |
+            Your identifier for this order, invoice, or payment attempt. It
+            must exist on your side before you call this endpoint — Bilt only
+            stores and echoes it, unchanged, on the response and on every
+            webhook for this payment. If your order record is created only
+            after payment, generate the id first and attach the order to it
+            when the webhook arrives.
+          example: acme_order_sandbox_456
+        lineItems:
+          type: array
+          minItems: 1
+          maxItems: 100
+          description: |
+            Sealed list of what is being paid for. All items must share one
+            `currency`, and `integratorSkuId` must be unique within the request.
+          items:
+            $ref: '#/components/schemas/ExternalLineItem'
+        metadata:
+          $ref: '#/components/schemas/IntegratorMetadata'
+
+    DefaultPaymentMethodResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          additionalProperties: false
+          required:
+            - integratorCustomerId
+            - paymentMethod
+            - updatedAt
+          properties:
+            integratorCustomerId:
+              type: string
+              minLength: 1
+              maxLength: 64
+              pattern: '^[A-Za-z0-9_.:~-]+$'
+              example: acme_customer_sandbox_123
+            paymentMethod:
+              $ref: '#/components/schemas/PaymentMethodSummary'
+            updatedAt:
+              type: string
+              format: date-time
+              example: '2026-08-24T22:00:00Z'
+
+    PaymentMethodSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - last4
+        - brand
+        - type
+        - expiryMonth
+        - expiryYear
+      properties:
+        last4:
+          type: string
+          pattern: '^[0-9]{4}$'
+          description: Last four digits for display only.
+          example: '4242'
+        brand:
+          type: string
+          description: '[CHECK: provisional values, e.g. VISA, MASTERCARD, AMEX, DISCOVER, OTHER.] Card brand.'
+          example: VISA
+        type:
+          type: string
+          description: '[CHECK: provisional values, e.g. CREDIT, DEBIT, OTHER.] Payment method type.'
+          example: CREDIT
+        expiryMonth:
+          type: integer
+          minimum: 1
+          maximum: 12
+          description: Expiration month.
+          example: 12
+        expiryYear:
+          type: integer
+          description: Expiration year.
+          example: 2028
+
+    ExternalLineItem:
+      type: object
+      additionalProperties: false
+      required:
+        - integratorSkuId
+        - lineItemType
+        - quantity
+        - unitPriceCents
+        - amountCents
+        - currency
+      properties:
+        integratorSkuId:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: |
+            Your identifier for the SKU; Bilt maps it to its catalog. Unique
+            within one request. [CHECK: the current implementation accepts this
+            field as `integratorSku`; rename pending.]
+          example: acme_membership_monthly
+        lineItemType:
+          type: string
+          enum: [PRODUCT]
+          description: |
+            Kind of line. `PRODUCT` today. [CHECK: `SHIPPING`,
+            `SUBSCRIPTION`, `INCIDENTAL` are under discussion and not yet
+            accepted.]
+          example: PRODUCT
+        quantity:
+          type: integer
+          minimum: 1
+          example: 1
+        unitPriceCents:
+          type: integer
+          format: int64
+          minimum: 0
+          description: |
+            Price per unit in minor currency units. May be `0` for a bundled
+            or promotional line; never negative — a discount is not a line
+            item.
+          example: 4900
+        amountCents:
+          type: integer
+          format: int64
+          minimum: 0
+          description: |
+            Line total in minor units; must equal `quantity × unitPriceCents`
+            or the request is rejected with `400 INVALID_REQUEST`.
+          example: 4900
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          description: ISO 4217 currency code. Currently only `USD` is accepted.
+          example: USD
+
+    IntegratorMetadata:
+      type: object
+      nullable: true
+      maxProperties: 20
+      additionalProperties:
+        type: string
+        maxLength: 500
+      description: |
+        Optional integrator-owned correlation values (up to 20 keys, string
+        values up to 500 characters). Echoed back on webhooks and never
+        interpreted by Bilt. Do not include secrets, credentials, card data,
+        or personal data.
+      example:
+        correlationId: acme_correlation_sandbox_789
+
+    CheckoutSessionEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/CheckoutSession'
+
+    CheckoutSession:
+      type: object
+      required:
+        - sessionId
+        - mode
+        - status
+        - orderId
+        - amounts
+        - checkoutUrl
+        - expiresAt
+      properties:
+        sessionId:
+          type: string
+          description: Opaque Bilt checkout-session identifier; echoed on webhooks.
+          example: checkout_session_sandbox_123
+        mode:
+          type: string
+          enum: [hosted]
+        status:
+          type: string
+          enum: [OPEN]
+          description: |
+            Always `OPEN` on creation. Terminal states (`COMPLETED`,
+            `CANCELLED`, `EXPIRED`) are delivered by webhook.
+        orderId:
+          type: string
+          description: Your `orderId`, echoed unchanged.
+          example: acme_order_sandbox_456
+        amounts:
+          description: |
+            Order total as submitted. Credits are chosen by the customer
+            inside the hosted checkout, so the final split arrives on
+            `checkout.session.completed`.
+          $ref: '#/components/schemas/OrderAmounts'
+        checkoutUrl:
+          type: string
+          format: uri
+          description: |
+            Short-lived handoff URL to present in the Checkout SDK. Treat it
+            as a bearer credential for this one session.
+          example: https://checkout.sandbox.example.invalid/s/session_sandbox_token
+        expiresAt:
+          type: string
+          format: date-time
+          description: When the session and its `checkoutUrl` stop working.
+          example: '2026-08-24T22:30:00Z'
+
+    OrderAmounts:
+      type: object
+      required:
+        - subtotalCents
+        - currency
+      properties:
+        subtotalCents:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Sum of `amountCents` over all line items.
+          example: 4900
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          example: USD
+
+    HeadlessPaymentEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/HeadlessPayment'
+
+    HeadlessPayment:
+      type: object
+      required:
+        - sessionId
+        - mode
+        - status
+        - orderId
+        - amounts
+      description: |
+        Acknowledgement that a headless payment was accepted for processing.
+        The settled outcome arrives by webhook.
+      properties:
+        sessionId:
+          type: string
+          description: |
+            Opaque Bilt identifier for this payment; the `payment.*` webhook
+            for it carries the same value.
+          example: checkout_session_sandbox_headless_123
+        mode:
+          type: string
+          enum: [headless]
+        status:
+          type: string
+          enum: [PROCESSING]
+          description: |
+            Always `PROCESSING` on acceptance. `SUCCEEDED` / `FAILED` are
+            delivered by webhook.
+        orderId:
+          type: string
+          description: Your `orderId`, echoed unchanged.
+          example: acme_subscription_invoice_sandbox_2026_08
+        amounts:
+          $ref: '#/components/schemas/PaymentAmounts'
+
+    HeadlessPaymentOutcomeEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/HeadlessPaymentOutcome'
+
+    HeadlessPaymentOutcome:
+      oneOf:
+        - $ref: '#/components/schemas/HeadlessPaymentSucceeded'
+        - $ref: '#/components/schemas/HeadlessPaymentFailed'
+      discriminator:
+        propertyName: status
+        mapping:
+          SUCCEEDED: '#/components/schemas/HeadlessPaymentSucceeded'
+          FAILED: '#/components/schemas/HeadlessPaymentFailed'
+
+    HeadlessPaymentSucceeded:
+      type: object
+      required:
+        - sessionId
+        - mode
+        - status
+        - orderId
+        - paymentId
+        - amounts
+      properties:
+        sessionId:
+          type: string
+          example: checkout_session_sandbox_headless_123
+        mode:
+          type: string
+          enum: [headless]
+        status:
+          type: string
+          enum: [SUCCEEDED]
+        orderId:
+          type: string
+          example: acme_subscription_invoice_sandbox_2026_08
+        paymentId:
+          type: string
+          description: Bilt payment identifier; same value as `paymentId` on the `payment.succeeded` webhook
+          example: payment_sandbox_789
+        amounts:
+          description: Final payment split.
+          $ref: '#/components/schemas/PaymentAmounts'
+
+    HeadlessPaymentFailed:
+      type: object
+      required:
+        - sessionId
+        - mode
+        - status
+        - orderId
+        - failure
+      properties:
+        sessionId:
+          type: string
+          example: checkout_session_sandbox_headless_124
+        mode:
+          type: string
+          enum: [headless]
+        status:
+          type: string
+          enum: [FAILED]
+        orderId:
+          type: string
+          example: acme_subscription_invoice_sandbox_2026_09
+        failure:
+          $ref: '#/components/schemas/PaymentFailure'
+
+    PaymentAmounts:
+      type: object
+      required:
+        - subtotalCents
+        - creditsAppliedCents
+        - chargedAmountCents
+        - currency
+      description: |
+        Split of the order total between eligible Bilt credits and the
+        customer's card. `subtotalCents = creditsAppliedCents +
+        chargedAmountCents`. On a `202` acceptance `creditsAppliedCents` is
+        `0`; the final split is on the `payment.succeeded` webhook. A
+        synchronous `200` response carries the final split.
+      properties:
+        subtotalCents:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Sum of `amountCents` over all line items.
+          example: 4900
+        creditsAppliedCents:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Eligible Bilt credits applied automatically.
+          example: 500
+        chargedAmountCents:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Amount charged to the customer's payment method.
+          example: 4400
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          example: USD
+
+    PaymentWebhookEvent:
+      description: |
+        Standard Webhooks payload. `type` is the discriminator: each event
+        type fixes `data.mode` and `data.status` and states exactly which
+        fields are present, so a validator generated from this document
+        rejects e.g. `payment.failed` without `failure` or `payment.succeeded`
+        without settled `amounts`.
+      oneOf:
+        - $ref: '#/components/schemas/CheckoutSessionCompletedEvent'
+        - $ref: '#/components/schemas/CheckoutSessionCancelledEvent'
+        - $ref: '#/components/schemas/CheckoutSessionExpiredEvent'
+        - $ref: '#/components/schemas/PaymentSucceededEvent'
+        - $ref: '#/components/schemas/PaymentFailedEvent'
+      discriminator:
+        propertyName: type
+        mapping:
+          checkout.session.completed: '#/components/schemas/CheckoutSessionCompletedEvent'
+          checkout.session.cancelled: '#/components/schemas/CheckoutSessionCancelledEvent'
+          checkout.session.expired: '#/components/schemas/CheckoutSessionExpiredEvent'
+          payment.succeeded: '#/components/schemas/PaymentSucceededEvent'
+          payment.failed: '#/components/schemas/PaymentFailedEvent'
+
+    WebhookEventBase:
+      type: object
+      required:
+        - type
+        - timestamp
+        - data
+      properties:
+        type:
+          type: string
+          description: Event type; see **Introduction › Webhooks › Payload**.
+        timestamp:
+          type: string
+          format: date-time
+          description: When the event occurred (not when it was delivered).
+          example: '2026-08-24T22:15:12.344Z'
+
+    WebhookDataBase:
+      type: object
+      required:
+        - sessionId
+        - mode
+        - orderId
+        - integratorCustomerId
+        - status
+      properties:
+        sessionId:
+          type: string
+          description: The `sessionId` returned when the session or payment was created.
+          example: checkout_session_sandbox_123
+        orderId:
+          type: string
+          description: Your `orderId`, echoed unchanged.
+          example: acme_order_sandbox_456
+        integratorCustomerId:
+          type: string
+          description: Your customer identifier, echoed unchanged.
+          example: acme_customer_sandbox_123
+        metadata:
+          $ref: '#/components/schemas/IntegratorMetadata'
+
+    CheckoutSessionCompletedEvent:
+      allOf:
+        - $ref: '#/components/schemas/WebhookEventBase'
+        - type: object
+          properties:
+            type:
+              type: string
+              enum: [checkout.session.completed]
+            data:
+              allOf:
+                - $ref: '#/components/schemas/WebhookDataBase'
+                - type: object
+                  required: [paymentId, amounts]
+                  properties:
+                    mode:
+                      type: string
+                      enum: [hosted]
+                    status:
+                      type: string
+                      enum: [COMPLETED]
+                    paymentId:
+                      type: string
+                      description: Opaque Bilt payment identifier.
+                      example: payment_sandbox_789
+                    amounts:
+                      $ref: '#/components/schemas/PaymentAmounts'
+
+    CheckoutSessionCancelledEvent:
+      allOf:
+        - $ref: '#/components/schemas/WebhookEventBase'
+        - type: object
+          properties:
+            type:
+              type: string
+              enum: [checkout.session.cancelled]
+            data:
+              allOf:
+                - $ref: '#/components/schemas/WebhookDataBase'
+                - type: object
+                  properties:
+                    mode:
+                      type: string
+                      enum: [hosted]
+                    status:
+                      type: string
+                      enum: [CANCELLED]
+
+    CheckoutSessionExpiredEvent:
+      allOf:
+        - $ref: '#/components/schemas/WebhookEventBase'
+        - type: object
+          properties:
+            type:
+              type: string
+              enum: [checkout.session.expired]
+            data:
+              allOf:
+                - $ref: '#/components/schemas/WebhookDataBase'
+                - type: object
+                  properties:
+                    mode:
+                      type: string
+                      enum: [hosted]
+                    status:
+                      type: string
+                      enum: [EXPIRED]
+
+    PaymentSucceededEvent:
+      allOf:
+        - $ref: '#/components/schemas/WebhookEventBase'
+        - type: object
+          properties:
+            type:
+              type: string
+              enum: [payment.succeeded]
+            data:
+              allOf:
+                - $ref: '#/components/schemas/WebhookDataBase'
+                - type: object
+                  required: [paymentId, amounts]
+                  properties:
+                    mode:
+                      type: string
+                      enum: [headless]
+                    status:
+                      type: string
+                      enum: [SUCCEEDED]
+                    paymentId:
+                      type: string
+                      description: Opaque Bilt payment identifier.
+                      example: payment_sandbox_790
+                    amounts:
+                      $ref: '#/components/schemas/PaymentAmounts'
+
+    PaymentFailedEvent:
+      allOf:
+        - $ref: '#/components/schemas/WebhookEventBase'
+        - type: object
+          properties:
+            type:
+              type: string
+              enum: [payment.failed]
+            data:
+              allOf:
+                - $ref: '#/components/schemas/WebhookDataBase'
+                - type: object
+                  required: [failure]
+                  properties:
+                    mode:
+                      type: string
+                      enum: [headless]
+                    status:
+                      type: string
+                      enum: [FAILED]
+                    failure:
+                      $ref: '#/components/schemas/PaymentFailure'
+
+    PaymentFailure:
+      type: object
+      additionalProperties: false
+      description: Why a headless charge could not be completed.
+      required:
+        - code
+        - message
+        - retryable
+      properties:
+        code:
+          type: string
+          pattern: '^[A-Z][A-Z0-9_]*$'
+          description: |
+            Stable reason code. `CARD_DECLINED`, `PAYMENT_METHOD_EXPIRED`,
+            `PAYMENT_METHOD_NOT_FOUND`, `PROCESSOR_UNAVAILABLE`.
+            [CHECK: final failure-code list is owned by the payment
+            processor integration.]
+          example: CARD_DECLINED
+        message:
+          type: string
+          description: Human-readable reason; do not branch on it.
+          example: The card issuer declined the charge
+        retryable:
+          type: boolean
+          description: |
+            Whether a **new** headless payment for the same order may
+            succeed without the customer acting first (for example a
+            transient processor failure). `false` means the customer needs
+            to update their payment method in the Bilt app.
+          example: true
+
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error]
+      description: |
+        Error envelope returned on every non-`2xx` response. Branch on the
+        stable `code`, not the human-readable `message`.
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
+
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - message
+        - requestId
+        - retryable
+      properties:
+        code:
+          type: string
+          pattern: '^[A-Z][A-Z0-9_]*$'
+          description: Stable machine-readable code; see **Introduction › Errors**.
+          enum:
+            - INVALID_REQUEST
+            - UNAUTHENTICATED
+            - CUSTOMER_NOT_FOUND
+            - PAYMENT_METHOD_NOT_FOUND
+            - IDEMPOTENCY_CONFLICT
+            - SESSION_ALREADY_COMPLETED
+            - RATE_LIMIT_EXCEEDED
+            - INTERNAL_ERROR
+            - PAYMENT_UNAVAILABLE
+          example: CUSTOMER_NOT_FOUND
+        message:
+          type: string
+          description: Human-readable operational message; do not branch on it.
+          example: No linked Bilt member for integratorCustomerId
+        requestId:
+          type: string
+          description: Correlation id to quote when contacting Bilt.
+          example: request_sandbox_123
+        retryable:
+          type: boolean
+          description: |
+            Whether sending the same request again may succeed. `false`
+            whenever somebody has to act first.
+          example: false

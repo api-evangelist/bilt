@@ -1,0 +1,9 @@
+generated: 2026-09-28
+method: derived
+type: Overlay
+openapi: "openapi/_original/checkout-sdk.yml"
+actions:
+  - op: add
+    path: /info/x-agent-enhancements
+    value:
+      description: "Added by API Evangelist surfaces module"

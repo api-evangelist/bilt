@@ -1,0 +1,21 @@
+generated: '2026-09-28'
+method: derived
+generator: derive-webhooks.py
+source:
+- openapi/_original/checkout-sdk.yml
+description: 'Event surface derived from the provider''s own OpenAPI: callbacks. No AsyncAPI document is published by the provider; this catalog
+  lists the events the contract names.'
+management_operations: []
+events:
+- event: checkoutSessionCompleted
+  description: callback declared on createCheckoutSession
+  declared_in: callbacks
+- event: checkoutSessionCancelledOrExpired
+  description: callback declared on createCheckoutSession
+  declared_in: callbacks
+- event: paymentSucceeded
+  description: callback declared on createHeadlessPayment
+  declared_in: callbacks
+- event: paymentFailed
+  description: callback declared on createHeadlessPayment
+  declared_in: callbacks

@@ -1,0 +1,62 @@
+generated: '2026-09-28'
+method: derived
+generator: derive-problem-types.py
+source:
+- openapi/_original/checkout-sdk.yml
+format: custom
+envelope:
+  media_type: application/json
+  schema: ErrorResponse
+coverage:
+  operations: 4
+  statuses_declared: 7
+problems:
+- status: 400
+  title: Bad Request
+  description: The request is malformed. `message` names the offending field.
+  operations: 3
+  media_types:
+  - application/json
+  schema: ErrorResponse
+- status: 401
+  title: Unauthorized
+  description: Missing, expired, or wrong-audience access token.
+  operations: 4
+  media_types:
+  - application/json
+  schema: ErrorResponse
+- status: 404
+  title: Not Found
+  description: The customer is not linked to a Bilt member, or the member has no
+  operations: 4
+  media_types:
+  - application/json
+  schema: ErrorResponse
+- status: 409
+  title: Conflict
+  description: Idempotency conflict, or the session is already terminal.
+  operations: 3
+  media_types:
+  - application/json
+  schema: ErrorResponse
+- status: 429
+  title: Too Many Requests
+  description: Too many requests. Gateway-enforced; retry with backoff, honouring
+  operations: 4
+  media_types:
+  - application/json
+  schema: ErrorResponse
+- status: 500
+  title: Internal Server Error
+  description: 'Unexpected Bilt error. For headless payments, do not retry blindly:'
+  operations: 4
+  media_types:
+  - application/json
+  schema: ErrorResponse
+- status: 503
+  title: Service Unavailable
+  description: Bilt could not reach the customer's wallet or another required
+  operations: 3
+  media_types:
+  - application/json
+  schema: ErrorResponse
