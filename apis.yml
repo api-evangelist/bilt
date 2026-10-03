@@ -77,11 +77,53 @@ common:
 
 apis:
 - name: Bilt Checkout SDK
-  description: External backend contract for integrators using the Bilt Checkout SDK, documented at developers.bilt.com. No owned OpenAPI spec
-    found on Bilt's own domain.
+  description: >-
+    External backend contract for integrators using the Bilt Checkout SDK, documented at developers.bilt.com.
+    No owned OpenAPI spec found on Bilt's own domain.
   humanURL: https://developers.bilt.com/docs/
   aid: bilt:bilt-checkout-sdk
+- aid: bilt:bilt-default-payment-method-api
+  name: BILT Default payment method API
+  description: >-
+    Read-only lookup of a customer's current default payment-method
 
+    summary for display and pre-flight checks. Bilt resolves the default
+
+    again at charge time, so it may change between lookup and payment.
+  humanURL: https://developers.bilt.com/docs/
+  tags:
+  - Default payment method
+  properties:
+  - type: OpenAPI
+    url: openapi/bilt-default-payment-method-api-openapi.yml
+- aid: bilt:bilt-headless-payments-api
+  name: BILT Headless payments API
+  description: >-
+    Charge a customer's current default Bilt payment method with no Bilt
+
+    UI, for subscriptions, autopay, or other off-session payments. The
+
+    outcome arrives as a `payment.*` webhook.
+  humanURL: https://developers.bilt.com/docs/
+  tags:
+  - Headless payments
+  properties:
+  - type: OpenAPI
+    url: openapi/bilt-headless-payments-api-openapi.yml
+- aid: bilt:bilt-one-time-payments-api
+  name: BILT One-time payments API
+  description: >-
+    Open a checkout session that renders Bilt-hosted checkout in the
+
+    Checkout SDK. The customer confirms the payment themselves; the
+
+    outcome arrives as a `checkout.session.*` webhook.
+  humanURL: https://developers.bilt.com/docs/
+  tags:
+  - One-time payments
+  properties:
+  - type: OpenAPI
+    url: openapi/bilt-one-time-payments-api-openapi.yml
 x-coverage:
   state: unreadable
   reason: no-machine-readable-spec

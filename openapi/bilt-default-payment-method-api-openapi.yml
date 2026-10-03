@@ -1,0 +1,325 @@
+openapi: 3.2.0
+info:
+  title: Bilt Checkout SDK Default payment method API
+  version: 0.2.0-draft
+  description: '# Introduction
+
+
+    External backend contract for integrators using the Bilt Checkout SDK.'
+servers:
+- url: https://partnerapi.biltrewards.com
+  description: Production — partner (third-party) gateway
+- url: https://staging.partnerapi.biltrewards.com
+  description: Staging — partner (third-party) gateway
+security:
+- checkoutPartnerOAuth: []
+tags:
+- name: Default payment method
+  description: 'Read-only lookup of a customer''s current default payment-method
+
+    summary for display and pre-flight checks. Bilt resolves the default
+
+    again at charge time, so it may change between lookup and payment.'
+paths:
+  /partner/checkout/v1/customers/{integratorCustomerId}/default-payment-method:
+    get:
+      tags:
+      - Default payment method
+      summary: Get a customer's default payment method
+      operationId: getDefaultPaymentMethod
+      description: 'Read-only lookup of the customer''s current default payment-method
+
+        summary for display and pre-flight checks. Use it to check that the
+
+        customer has a chargeable default before calling
+
+        `/partner/checkout/v1/headless-payments`. This endpoint does not accept
+
+        a payment method as input. Bilt still resolves the default itself at
+
+        charge time, so the card can change between this lookup and the charge.
+
+
+        **[CHECK]** This endpoint is not yet implemented in checkout-svc or
+
+        registered on the gateway; the contract below is the proposed shape.'
+      parameters:
+      - name: integratorCustomerId
+        in: path
+        required: true
+        description: Your stable identifier for the customer.
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: ^[A-Za-z0-9_.:~-]+$
+        example: acme_customer_sandbox_123
+      responses:
+        '200':
+          description: Default payment method found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DefaultPaymentMethodResponse'
+              example:
+                data:
+                  integratorCustomerId: acme_customer_sandbox_123
+                  paymentMethod:
+                    last4: '4242'
+                    brand: VISA
+                    type: CREDIT
+                    expiryMonth: 12
+                    expiryYear: 2028
+                  updatedAt: '2026-08-24T22:00:00Z'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/HeadlessNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+components:
+  responses:
+    Unauthenticated:
+      description: Missing, expired, or wrong-audience access token.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: UNAUTHENTICATED
+              message: Missing or invalid access token
+              requestId: request_sandbox_126
+              retryable: false
+    HeadlessNotFound:
+      description: 'The customer is not linked to a Bilt member, or the member has no
+
+        default Bilt payment method to charge.
+
+        '
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            customerNotFound:
+              value:
+                error:
+                  code: CUSTOMER_NOT_FOUND
+                  message: No linked Bilt member for integratorCustomerId
+                  requestId: request_sandbox_128
+                  retryable: false
+            paymentMethodNotFound:
+              value:
+                error:
+                  code: PAYMENT_METHOD_NOT_FOUND
+                  message: The member has no default payment method
+                  requestId: request_sandbox_129
+                  retryable: false
+    InternalError:
+      description: 'Unexpected Bilt error. For headless payments, do not retry blindly:
+
+        the charge may have been accepted — check for a `payment.*` webhook
+
+        for the same `orderId` first, and retry with the **same**
+
+        `Idempotency-Key`.
+
+        '
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: Unexpected server error
+              requestId: request_sandbox_133
+              retryable: false
+    RateLimited:
+      description: 'Too many requests. Gateway-enforced; retry with backoff, honouring
+
+        `Retry-After` when present. The sync endpoint''s limit is lower than
+
+        the async endpoint''s. Per-integrator quotas are agreed during
+
+        onboarding when your volume warrants one.
+
+        '
+      headers:
+        Retry-After:
+          description: Number of seconds to wait before retrying.
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: Too many requests
+              requestId: request_sandbox_132
+              retryable: true
+  schemas:
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required:
+      - code
+      - message
+      - requestId
+      - retryable
+      properties:
+        code:
+          type: string
+          pattern: ^[A-Z][A-Z0-9_]*$
+          description: Stable machine-readable code; see **Introduction › Errors**.
+          enum:
+          - INVALID_REQUEST
+          - UNAUTHENTICATED
+          - CUSTOMER_NOT_FOUND
+          - PAYMENT_METHOD_NOT_FOUND
+          - IDEMPOTENCY_CONFLICT
+          - SESSION_ALREADY_COMPLETED
+          - RATE_LIMIT_EXCEEDED
+          - INTERNAL_ERROR
+          - PAYMENT_UNAVAILABLE
+          example: CUSTOMER_NOT_FOUND
+        message:
+          type: string
+          description: Human-readable operational message; do not branch on it.
+          example: No linked Bilt member for integratorCustomerId
+        requestId:
+          type: string
+          description: Correlation id to quote when contacting Bilt.
+          example: request_sandbox_123
+        retryable:
+          type: boolean
+          description: 'Whether sending the same request again may succeed. `false`
+
+            whenever somebody has to act first.
+
+            '
+          example: false
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - error
+      description: 'Error envelope returned on every non-`2xx` response. Branch on the
+
+        stable `code`, not the human-readable `message`.
+
+        '
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
+    DefaultPaymentMethodResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - data
+      properties:
+        data:
+          type: object
+          additionalProperties: false
+          required:
+          - integratorCustomerId
+          - paymentMethod
+          - updatedAt
+          properties:
+            integratorCustomerId:
+              type: string
+              minLength: 1
+              maxLength: 64
+              pattern: ^[A-Za-z0-9_.:~-]+$
+              example: acme_customer_sandbox_123
+            paymentMethod:
+              $ref: '#/components/schemas/PaymentMethodSummary'
+            updatedAt:
+              type: string
+              format: date-time
+              example: '2026-08-24T22:00:00Z'
+    PaymentMethodSummary:
+      type: object
+      additionalProperties: false
+      required:
+      - last4
+      - brand
+      - type
+      - expiryMonth
+      - expiryYear
+      properties:
+        last4:
+          type: string
+          pattern: ^[0-9]{4}$
+          description: Last four digits for display only.
+          example: '4242'
+        brand:
+          type: string
+          description: '[CHECK: provisional values, e.g. VISA, MASTERCARD, AMEX, DISCOVER, OTHER.] Card brand.'
+          example: VISA
+        type:
+          type: string
+          description: '[CHECK: provisional values, e.g. CREDIT, DEBIT, OTHER.] Payment method type.'
+          example: CREDIT
+        expiryMonth:
+          type: integer
+          minimum: 1
+          maximum: 12
+          description: Expiration month.
+          example: 12
+        expiryYear:
+          type: integer
+          description: Expiration year.
+          example: 2028
+  securitySchemes:
+    checkoutPartnerOAuth:
+      type: oauth2
+      description: 'OAuth 2.0 client credentials against the `enterprise-partner`
+
+        Keycloak realm. Bilt issues your client id and client secret during
+
+        onboarding; tokens carry an audience Bilt assigns to your client at
+
+        onboarding, and Bilt
+
+        identifies your integration from the token''s `azp` claim. You do not
+
+        request the audience or any scope yourself: Bilt assigns the audience
+
+        to your client at onboarding, and no scopes are required — a plain
+
+        client-credentials grant with your client id and secret is enough. The
+
+        values you need from Bilt are the token endpoint for the environment,
+
+        your client id, and your client secret. Send the result as
+
+        `Authorization: Bearer <access_token>`. The token URL below is
+
+        **staging** — production is
+
+        `https://www.bilt.com/realms/enterprise-partner/protocol/openid-connect/token`.
+
+        Keep the client secret server-side only.
+
+        '
+      flows:
+        clientCredentials:
+          tokenUrl: https://staging.biltrewards.com/realms/enterprise-partner/protocol/openid-connect/token
+          scopes: {}
+x-tagGroups:
+- name: Checkout SDK
+  tags:
+  - Integration models
+  - Gateway mode
+  - Choosing an acquirer
+  - One-time payments
+  - Headless payments
+  - Default payment method
+  - Payment webhooks
