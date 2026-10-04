@@ -80,91 +80,20 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 components:
-  responses:
-    Unauthenticated:
-      description: Missing, expired, or wrong-audience access token.
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-          example:
-            error:
-              code: UNAUTHENTICATED
-              message: Missing or invalid access token
-              requestId: request_sandbox_126
-              retryable: false
-    HeadlessNotFound:
-      description: 'The customer is not linked to a Bilt member, or the member has no
-
-        default Bilt payment method to charge.
-
-        '
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-          examples:
-            customerNotFound:
-              value:
-                error:
-                  code: CUSTOMER_NOT_FOUND
-                  message: No linked Bilt member for integratorCustomerId
-                  requestId: request_sandbox_128
-                  retryable: false
-            paymentMethodNotFound:
-              value:
-                error:
-                  code: PAYMENT_METHOD_NOT_FOUND
-                  message: The member has no default payment method
-                  requestId: request_sandbox_129
-                  retryable: false
-    InternalError:
-      description: 'Unexpected Bilt error. For headless payments, do not retry blindly:
-
-        the charge may have been accepted — check for a `payment.*` webhook
-
-        for the same `orderId` first, and retry with the **same**
-
-        `Idempotency-Key`.
-
-        '
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-          example:
-            error:
-              code: INTERNAL_ERROR
-              message: Unexpected server error
-              requestId: request_sandbox_133
-              retryable: false
-    RateLimited:
-      description: 'Too many requests. Gateway-enforced; retry with backoff, honouring
-
-        `Retry-After` when present. The sync endpoint''s limit is lower than
-
-        the async endpoint''s. Per-integrator quotas are agreed during
-
-        onboarding when your volume warrants one.
-
-        '
-      headers:
-        Retry-After:
-          description: Number of seconds to wait before retrying.
-          schema:
-            type: integer
-            minimum: 1
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-          example:
-            error:
-              code: RATE_LIMIT_EXCEEDED
-              message: Too many requests
-              requestId: request_sandbox_132
-              retryable: true
   schemas:
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - error
+      description: 'Error envelope returned on every non-`2xx` response. Branch on the
+
+        stable `code`, not the human-readable `message`.
+
+        '
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
     ErrorDetail:
       type: object
       additionalProperties: false
@@ -205,19 +134,6 @@ components:
 
             '
           example: false
-    ErrorResponse:
-      type: object
-      additionalProperties: false
-      required:
-      - error
-      description: 'Error envelope returned on every non-`2xx` response. Branch on the
-
-        stable `code`, not the human-readable `message`.
-
-        '
-      properties:
-        error:
-          $ref: '#/components/schemas/ErrorDetail'
     DefaultPaymentMethodResponse:
       type: object
       additionalProperties: false
@@ -277,6 +193,90 @@ components:
           type: integer
           description: Expiration year.
           example: 2028
+  responses:
+    RateLimited:
+      description: 'Too many requests. Gateway-enforced; retry with backoff, honouring
+
+        `Retry-After` when present. The sync endpoint''s limit is lower than
+
+        the async endpoint''s. Per-integrator quotas are agreed during
+
+        onboarding when your volume warrants one.
+
+        '
+      headers:
+        Retry-After:
+          description: Number of seconds to wait before retrying.
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: Too many requests
+              requestId: request_sandbox_132
+              retryable: true
+    InternalError:
+      description: 'Unexpected Bilt error. For headless payments, do not retry blindly:
+
+        the charge may have been accepted — check for a `payment.*` webhook
+
+        for the same `orderId` first, and retry with the **same**
+
+        `Idempotency-Key`.
+
+        '
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: Unexpected server error
+              requestId: request_sandbox_133
+              retryable: false
+    Unauthenticated:
+      description: Missing, expired, or wrong-audience access token.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: UNAUTHENTICATED
+              message: Missing or invalid access token
+              requestId: request_sandbox_126
+              retryable: false
+    HeadlessNotFound:
+      description: 'The customer is not linked to a Bilt member, or the member has no
+
+        default Bilt payment method to charge.
+
+        '
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            customerNotFound:
+              value:
+                error:
+                  code: CUSTOMER_NOT_FOUND
+                  message: No linked Bilt member for integratorCustomerId
+                  requestId: request_sandbox_128
+                  retryable: false
+            paymentMethodNotFound:
+              value:
+                error:
+                  code: PAYMENT_METHOD_NOT_FOUND
+                  message: The member has no default payment method
+                  requestId: request_sandbox_129
+                  retryable: false
   securitySchemes:
     checkoutPartnerOAuth:
       type: oauth2
