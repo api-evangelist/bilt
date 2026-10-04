@@ -24,6 +24,13 @@ created: '2026-09-28'
 modified: '2026-09-28'
 
 tags:
+- Fintech
+- Loyalty
+- Payments
+- RentRewards
+- Credit Cards
+- Real Estate
+tags_raw:
 - FinTech
 - Loyalty
 - Payments
@@ -120,6 +127,8 @@ apis:
     outcome arrives as a `checkout.session.*` webhook.
   humanURL: https://developers.bilt.com/docs/
   tags:
+  - One-Time Payments
+  tags_raw:
   - One-time payments
   properties:
   - type: OpenAPI
