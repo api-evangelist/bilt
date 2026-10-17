@@ -182,98 +182,48 @@ paths:
                 2xx:
                   description: Event acknowledged; Bilt will not redeliver it.
 components:
-  parameters:
-    WebhookId:
-      name: webhook-id
-      in: header
-      required: true
-      description: 'Unique message id, stable across redeliveries of the same event.
-
-        Deduplicate on it.
-
-        '
-      schema:
-        type: string
-        example: msg_2KWPBgLlAfxdpx2AI54pPJ85f4W
-    IdempotencyKey:
-      name: Idempotency-Key
-      in: header
-      required: false
-      description: 'Optional but strongly recommended — required in practice for headless
-
-        payments. Any string up to 255 characters; a fresh UUID per attempt
-
-        is the recommended form. A retry with the same key and body returns
-
-        the original result; the same key with a different body is rejected
-
-        with `409 IDEMPOTENCY_CONFLICT`. Keys are scoped to your client.
-
-        '
-      schema:
-        type: string
-        minLength: 1
-        maxLength: 255
-        example: 6f6b1afd-22e0-4137-a096-b15e41cdc890
-    WebhookSignature:
-      name: webhook-signature
-      in: header
-      required: true
-      description: 'Space-separated `v1,<base64>` signatures, each the base64
-
-        `HMAC-SHA256` of `"{webhook-id}.{webhook-timestamp}.{rawBody}"`
-
-        keyed by your `whsec_` signing secret. Accept the delivery if any one
-
-        verifies (constant-time comparison). Multiple entries appear only
-
-        during a secret rotation.
-
-        '
-      schema:
-        type: string
-        example: v1,K5oZfzN95Z9UVu1EsfQmfVNQhnkZ2pj9o9NDN/H/pI4=
-    WebhookTimestamp:
-      name: webhook-timestamp
-      in: header
-      required: true
-      description: 'Unix timestamp in seconds of this delivery attempt. Reject deliveries
-
-        more than 5 minutes from your clock.
-
-        '
-      schema:
-        type: integer
-        format: int64
-        example: 1787609712
   schemas:
-    PaymentWebhookEvent:
-      description: 'Standard Webhooks payload. `type` is the discriminator: each event
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required:
+      - code
+      - message
+      - requestId
+      - retryable
+      properties:
+        code:
+          type: string
+          pattern: ^[A-Z][A-Z0-9_]*$
+          description: Stable machine-readable code; see **Introduction › Errors**.
+          enum:
+          - INVALID_REQUEST
+          - UNAUTHENTICATED
+          - CUSTOMER_NOT_FOUND
+          - PAYMENT_METHOD_NOT_FOUND
+          - IDEMPOTENCY_CONFLICT
+          - SESSION_ALREADY_COMPLETED
+          - RATE_LIMIT_EXCEEDED
+          - INTERNAL_ERROR
+          - PAYMENT_UNAVAILABLE
+          example: CUSTOMER_NOT_FOUND
+        message:
+          type: string
+          description: Human-readable operational message; do not branch on it.
+          example: No linked Bilt member for integratorCustomerId
+        requestId:
+          type: string
+          description: Correlation id to quote when contacting Bilt.
+          example: request_sandbox_123
+        retryable:
+          type: boolean
+          description: 'Whether sending the same request again may succeed. `false`
 
-        type fixes `data.mode` and `data.status` and states exactly which
+            whenever somebody has to act first.
 
-        fields are present, so a validator generated from this document
-
-        rejects e.g. `payment.failed` without `failure` or `payment.succeeded`
-
-        without settled `amounts`.
-
-        '
-      oneOf:
-      - $ref: '#/components/schemas/CheckoutSessionCompletedEvent'
-      - $ref: '#/components/schemas/CheckoutSessionCancelledEvent'
-      - $ref: '#/components/schemas/CheckoutSessionExpiredEvent'
-      - $ref: '#/components/schemas/PaymentSucceededEvent'
-      - $ref: '#/components/schemas/PaymentFailedEvent'
-      discriminator:
-        propertyName: type
-        mapping:
-          checkout.session.completed: '#/components/schemas/CheckoutSessionCompletedEvent'
-          checkout.session.cancelled: '#/components/schemas/CheckoutSessionCancelledEvent'
-          checkout.session.expired: '#/components/schemas/CheckoutSessionExpiredEvent'
-          payment.succeeded: '#/components/schemas/PaymentSucceededEvent'
-          payment.failed: '#/components/schemas/PaymentFailedEvent'
-    CheckoutSessionCompletedEvent:
+            '
+          example: false
+    CheckoutSessionCancelledEvent:
       allOf:
       - $ref: '#/components/schemas/WebhookEventBase'
       - type: object
@@ -281,14 +231,11 @@ components:
           type:
             type: string
             enum:
-            - checkout.session.completed
+            - checkout.session.cancelled
           data:
             allOf:
             - $ref: '#/components/schemas/WebhookDataBase'
             - type: object
-              required:
-              - paymentId
-              - amounts
               properties:
                 mode:
                   type: string
@@ -297,70 +244,23 @@ components:
                 status:
                   type: string
                   enum:
-                  - COMPLETED
-                paymentId:
-                  type: string
-                  description: Opaque Bilt payment identifier.
-                  example: payment_sandbox_789
-                amounts:
-                  $ref: '#/components/schemas/PaymentAmounts'
-    WebhookEventBase:
+                  - CANCELLED
+    OrderAmounts:
       type: object
       required:
-      - type
-      - timestamp
-      - data
+      - subtotalCents
+      - currency
       properties:
-        type:
+        subtotalCents:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Sum of `amountCents` over all line items.
+          example: 4900
+        currency:
           type: string
-          description: Event type; see **Introduction › Webhooks › Payload**.
-        timestamp:
-          type: string
-          format: date-time
-          description: When the event occurred (not when it was delivered).
-          example: '2026-08-24T22:15:12.344Z'
-    WebhookDataBase:
-      type: object
-      required:
-      - sessionId
-      - mode
-      - orderId
-      - integratorCustomerId
-      - status
-      properties:
-        sessionId:
-          type: string
-          description: The `sessionId` returned when the session or payment was created.
-          example: checkout_session_sandbox_123
-        orderId:
-          type: string
-          description: Your `orderId`, echoed unchanged.
-          example: acme_order_sandbox_456
-        integratorCustomerId:
-          type: string
-          description: Your customer identifier, echoed unchanged.
-          example: acme_customer_sandbox_123
-        metadata:
-          $ref: '#/components/schemas/IntegratorMetadata'
-    IntegratorMetadata:
-      type:
-      - object
-      - 'null'
-      maxProperties: 20
-      additionalProperties:
-        type: string
-        maxLength: 500
-      description: 'Optional integrator-owned correlation values (up to 20 keys, string
-
-        values up to 500 characters). Echoed back on webhooks and never
-
-        interpreted by Bilt. Do not include secrets, credentials, card data,
-
-        or personal data.
-
-        '
-      example:
-        correlationId: acme_correlation_sandbox_789
+          pattern: ^[A-Z]{3}$
+          example: USD
     ExternalLineItem:
       type: object
       additionalProperties: false
@@ -427,44 +327,32 @@ components:
           pattern: ^[A-Z]{3}$
           description: ISO 4217 currency code. Currently only `USD` is accepted.
           example: USD
-    PaymentFailure:
-      type: object
-      additionalProperties: false
-      description: Why a headless charge could not be completed.
-      required:
-      - code
-      - message
-      - retryable
-      properties:
-        code:
-          type: string
-          pattern: ^[A-Z][A-Z0-9_]*$
-          description: 'Stable reason code. `CARD_DECLINED`, `PAYMENT_METHOD_EXPIRED`,
+    PaymentWebhookEvent:
+      description: 'Standard Webhooks payload. `type` is the discriminator: each event
 
-            `PAYMENT_METHOD_NOT_FOUND`, `PROCESSOR_UNAVAILABLE`.
+        type fixes `data.mode` and `data.status` and states exactly which
 
-            [CHECK: final failure-code list is owned by the payment
+        fields are present, so a validator generated from this document
 
-            processor integration.]
+        rejects e.g. `payment.failed` without `failure` or `payment.succeeded`
 
-            '
-          example: CARD_DECLINED
-        message:
-          type: string
-          description: Human-readable reason; do not branch on it.
-          example: The card issuer declined the charge
-        retryable:
-          type: boolean
-          description: 'Whether a **new** headless payment for the same order may
+        without settled `amounts`.
 
-            succeed without the customer acting first (for example a
-
-            transient processor failure). `false` means the customer needs
-
-            to update their payment method in the Bilt app.
-
-            '
-          example: true
+        '
+      oneOf:
+      - $ref: '#/components/schemas/CheckoutSessionCompletedEvent'
+      - $ref: '#/components/schemas/CheckoutSessionCancelledEvent'
+      - $ref: '#/components/schemas/CheckoutSessionExpiredEvent'
+      - $ref: '#/components/schemas/PaymentSucceededEvent'
+      - $ref: '#/components/schemas/PaymentFailedEvent'
+      discriminator:
+        propertyName: type
+        mapping:
+          checkout.session.completed: '#/components/schemas/CheckoutSessionCompletedEvent'
+          checkout.session.cancelled: '#/components/schemas/CheckoutSessionCancelledEvent'
+          checkout.session.expired: '#/components/schemas/CheckoutSessionExpiredEvent'
+          payment.succeeded: '#/components/schemas/PaymentSucceededEvent'
+          payment.failed: '#/components/schemas/PaymentFailedEvent'
     PaymentAmounts:
       type: object
       required:
@@ -506,127 +394,6 @@ components:
           type: string
           pattern: ^[A-Z]{3}$
           example: USD
-    CheckoutSession:
-      type: object
-      required:
-      - sessionId
-      - mode
-      - status
-      - orderId
-      - amounts
-      - checkoutUrl
-      - expiresAt
-      properties:
-        sessionId:
-          type: string
-          description: Opaque Bilt checkout-session identifier; echoed on webhooks.
-          example: checkout_session_sandbox_123
-        mode:
-          type: string
-          enum:
-          - hosted
-        status:
-          type: string
-          enum:
-          - OPEN
-          description: 'Always `OPEN` on creation. Terminal states (`COMPLETED`,
-
-            `CANCELLED`, `EXPIRED`) are delivered by webhook.
-
-            '
-        orderId:
-          type: string
-          description: Your `orderId`, echoed unchanged.
-          example: acme_order_sandbox_456
-        amounts:
-          description: 'Order total as submitted. Credits are chosen by the customer
-
-            inside the hosted checkout, so the final split arrives on
-
-            `checkout.session.completed`.
-
-            '
-          $ref: '#/components/schemas/OrderAmounts'
-        checkoutUrl:
-          type: string
-          format: uri
-          description: 'Short-lived handoff URL to present in the Checkout SDK. Treat it
-
-            as a bearer credential for this one session.
-
-            '
-          example: https://checkout.sandbox.example.invalid/s/session_sandbox_token
-        expiresAt:
-          type: string
-          format: date-time
-          description: When the session and its `checkoutUrl` stop working.
-          example: '2026-08-24T22:30:00Z'
-    PaymentSucceededEvent:
-      allOf:
-      - $ref: '#/components/schemas/WebhookEventBase'
-      - type: object
-        properties:
-          type:
-            type: string
-            enum:
-            - payment.succeeded
-          data:
-            allOf:
-            - $ref: '#/components/schemas/WebhookDataBase'
-            - type: object
-              required:
-              - paymentId
-              - amounts
-              properties:
-                mode:
-                  type: string
-                  enum:
-                  - headless
-                status:
-                  type: string
-                  enum:
-                  - SUCCEEDED
-                paymentId:
-                  type: string
-                  description: Opaque Bilt payment identifier.
-                  example: payment_sandbox_790
-                amounts:
-                  $ref: '#/components/schemas/PaymentAmounts'
-    CheckoutSessionCancelledEvent:
-      allOf:
-      - $ref: '#/components/schemas/WebhookEventBase'
-      - type: object
-        properties:
-          type:
-            type: string
-            enum:
-            - checkout.session.cancelled
-          data:
-            allOf:
-            - $ref: '#/components/schemas/WebhookDataBase'
-            - type: object
-              properties:
-                mode:
-                  type: string
-                  enum:
-                  - hosted
-                status:
-                  type: string
-                  enum:
-                  - CANCELLED
-    ErrorResponse:
-      type: object
-      additionalProperties: false
-      required:
-      - error
-      description: 'Error envelope returned on every non-`2xx` response. Branch on the
-
-        stable `code`, not the human-readable `message`.
-
-        '
-      properties:
-        error:
-          $ref: '#/components/schemas/ErrorDetail'
     CheckoutSessionExpiredEvent:
       allOf:
       - $ref: '#/components/schemas/WebhookEventBase'
@@ -649,7 +416,7 @@ components:
                   type: string
                   enum:
                   - EXPIRED
-    PaymentFailedEvent:
+    CheckoutSessionCompletedEvent:
       allOf:
       - $ref: '#/components/schemas/WebhookEventBase'
       - type: object
@@ -657,80 +424,36 @@ components:
           type:
             type: string
             enum:
-            - payment.failed
+            - checkout.session.completed
           data:
             allOf:
             - $ref: '#/components/schemas/WebhookDataBase'
             - type: object
               required:
-              - failure
+              - paymentId
+              - amounts
               properties:
                 mode:
                   type: string
                   enum:
-                  - headless
+                  - hosted
                 status:
                   type: string
                   enum:
-                  - FAILED
-                failure:
-                  $ref: '#/components/schemas/PaymentFailure'
-    OrderAmounts:
+                  - COMPLETED
+                paymentId:
+                  type: string
+                  description: Opaque Bilt payment identifier.
+                  example: payment_sandbox_789
+                amounts:
+                  $ref: '#/components/schemas/PaymentAmounts'
+    CheckoutSessionEnvelope:
       type: object
       required:
-      - subtotalCents
-      - currency
+      - data
       properties:
-        subtotalCents:
-          type: integer
-          format: int64
-          minimum: 0
-          description: Sum of `amountCents` over all line items.
-          example: 4900
-        currency:
-          type: string
-          pattern: ^[A-Z]{3}$
-          example: USD
-    ErrorDetail:
-      type: object
-      additionalProperties: false
-      required:
-      - code
-      - message
-      - requestId
-      - retryable
-      properties:
-        code:
-          type: string
-          pattern: ^[A-Z][A-Z0-9_]*$
-          description: Stable machine-readable code; see **Introduction › Errors**.
-          enum:
-          - INVALID_REQUEST
-          - UNAUTHENTICATED
-          - CUSTOMER_NOT_FOUND
-          - PAYMENT_METHOD_NOT_FOUND
-          - IDEMPOTENCY_CONFLICT
-          - SESSION_ALREADY_COMPLETED
-          - RATE_LIMIT_EXCEEDED
-          - INTERNAL_ERROR
-          - PAYMENT_UNAVAILABLE
-          example: CUSTOMER_NOT_FOUND
-        message:
-          type: string
-          description: Human-readable operational message; do not branch on it.
-          example: No linked Bilt member for integratorCustomerId
-        requestId:
-          type: string
-          description: Correlation id to quote when contacting Bilt.
-          example: request_sandbox_123
-        retryable:
-          type: boolean
-          description: 'Whether sending the same request again may succeed. `false`
-
-            whenever somebody has to act first.
-
-            '
-          example: false
+        data:
+          $ref: '#/components/schemas/CheckoutSession'
     CreatePaymentRequest:
       type: object
       additionalProperties: false
@@ -789,14 +512,307 @@ components:
             $ref: '#/components/schemas/ExternalLineItem'
         metadata:
           $ref: '#/components/schemas/IntegratorMetadata'
-    CheckoutSessionEnvelope:
+    CheckoutSession:
       type: object
       required:
+      - sessionId
+      - mode
+      - status
+      - orderId
+      - amounts
+      - checkoutUrl
+      - expiresAt
+      properties:
+        sessionId:
+          type: string
+          description: Opaque Bilt checkout-session identifier; echoed on webhooks.
+          example: checkout_session_sandbox_123
+        mode:
+          type: string
+          enum:
+          - hosted
+        status:
+          type: string
+          enum:
+          - OPEN
+          description: 'Always `OPEN` on creation. Terminal states (`COMPLETED`,
+
+            `CANCELLED`, `EXPIRED`) are delivered by webhook.
+
+            '
+        orderId:
+          type: string
+          description: Your `orderId`, echoed unchanged.
+          example: acme_order_sandbox_456
+        amounts:
+          description: 'Order total as submitted. Credits are chosen by the customer
+
+            inside the hosted checkout, so the final split arrives on
+
+            `checkout.session.completed`.
+
+            '
+          $ref: '#/components/schemas/OrderAmounts'
+        checkoutUrl:
+          type: string
+          format: uri
+          description: 'Short-lived handoff URL to present in the Checkout SDK. Treat it
+
+            as a bearer credential for this one session.
+
+            '
+          example: https://checkout.sandbox.example.invalid/s/session_sandbox_token
+        expiresAt:
+          type: string
+          format: date-time
+          description: When the session and its `checkoutUrl` stop working.
+          example: '2026-08-24T22:30:00Z'
+    PaymentFailure:
+      type: object
+      additionalProperties: false
+      description: Why a headless charge could not be completed.
+      required:
+      - code
+      - message
+      - retryable
+      properties:
+        code:
+          type: string
+          pattern: ^[A-Z][A-Z0-9_]*$
+          description: 'Stable reason code. `CARD_DECLINED`, `PAYMENT_METHOD_EXPIRED`,
+
+            `PAYMENT_METHOD_NOT_FOUND`, `PROCESSOR_UNAVAILABLE`.
+
+            [CHECK: final failure-code list is owned by the payment
+
+            processor integration.]
+
+            '
+          example: CARD_DECLINED
+        message:
+          type: string
+          description: Human-readable reason; do not branch on it.
+          example: The card issuer declined the charge
+        retryable:
+          type: boolean
+          description: 'Whether a **new** headless payment for the same order may
+
+            succeed without the customer acting first (for example a
+
+            transient processor failure). `false` means the customer needs
+
+            to update their payment method in the Bilt app.
+
+            '
+          example: true
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - error
+      description: 'Error envelope returned on every non-`2xx` response. Branch on the
+
+        stable `code`, not the human-readable `message`.
+
+        '
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
+    PaymentSucceededEvent:
+      allOf:
+      - $ref: '#/components/schemas/WebhookEventBase'
+      - type: object
+        properties:
+          type:
+            type: string
+            enum:
+            - payment.succeeded
+          data:
+            allOf:
+            - $ref: '#/components/schemas/WebhookDataBase'
+            - type: object
+              required:
+              - paymentId
+              - amounts
+              properties:
+                mode:
+                  type: string
+                  enum:
+                  - headless
+                status:
+                  type: string
+                  enum:
+                  - SUCCEEDED
+                paymentId:
+                  type: string
+                  description: Opaque Bilt payment identifier.
+                  example: payment_sandbox_790
+                amounts:
+                  $ref: '#/components/schemas/PaymentAmounts'
+    WebhookDataBase:
+      type: object
+      required:
+      - sessionId
+      - mode
+      - orderId
+      - integratorCustomerId
+      - status
+      properties:
+        sessionId:
+          type: string
+          description: The `sessionId` returned when the session or payment was created.
+          example: checkout_session_sandbox_123
+        orderId:
+          type: string
+          description: Your `orderId`, echoed unchanged.
+          example: acme_order_sandbox_456
+        integratorCustomerId:
+          type: string
+          description: Your customer identifier, echoed unchanged.
+          example: acme_customer_sandbox_123
+        metadata:
+          $ref: '#/components/schemas/IntegratorMetadata'
+    PaymentFailedEvent:
+      allOf:
+      - $ref: '#/components/schemas/WebhookEventBase'
+      - type: object
+        properties:
+          type:
+            type: string
+            enum:
+            - payment.failed
+          data:
+            allOf:
+            - $ref: '#/components/schemas/WebhookDataBase'
+            - type: object
+              required:
+              - failure
+              properties:
+                mode:
+                  type: string
+                  enum:
+                  - headless
+                status:
+                  type: string
+                  enum:
+                  - FAILED
+                failure:
+                  $ref: '#/components/schemas/PaymentFailure'
+    IntegratorMetadata:
+      type:
+      - object
+      - 'null'
+      maxProperties: 20
+      additionalProperties:
+        type: string
+        maxLength: 500
+      description: 'Optional integrator-owned correlation values (up to 20 keys, string
+
+        values up to 500 characters). Echoed back on webhooks and never
+
+        interpreted by Bilt. Do not include secrets, credentials, card data,
+
+        or personal data.
+
+        '
+      example:
+        correlationId: acme_correlation_sandbox_789
+    WebhookEventBase:
+      type: object
+      required:
+      - type
+      - timestamp
       - data
       properties:
-        data:
-          $ref: '#/components/schemas/CheckoutSession'
+        type:
+          type: string
+          description: Event type; see **Introduction › Webhooks › Payload**.
+        timestamp:
+          type: string
+          format: date-time
+          description: When the event occurred (not when it was delivered).
+          example: '2026-08-24T22:15:12.344Z'
+  parameters:
+    WebhookId:
+      name: webhook-id
+      in: header
+      required: true
+      description: 'Unique message id, stable across redeliveries of the same event.
+
+        Deduplicate on it.
+
+        '
+      schema:
+        type: string
+        example: msg_2KWPBgLlAfxdpx2AI54pPJ85f4W
+    WebhookSignature:
+      name: webhook-signature
+      in: header
+      required: true
+      description: 'Space-separated `v1,<base64>` signatures, each the base64
+
+        `HMAC-SHA256` of `"{webhook-id}.{webhook-timestamp}.{rawBody}"`
+
+        keyed by your `whsec_` signing secret. Accept the delivery if any one
+
+        verifies (constant-time comparison). Multiple entries appear only
+
+        during a secret rotation.
+
+        '
+      schema:
+        type: string
+        example: v1,K5oZfzN95Z9UVu1EsfQmfVNQhnkZ2pj9o9NDN/H/pI4=
+    WebhookTimestamp:
+      name: webhook-timestamp
+      in: header
+      required: true
+      description: 'Unix timestamp in seconds of this delivery attempt. Reject deliveries
+
+        more than 5 minutes from your clock.
+
+        '
+      schema:
+        type: integer
+        format: int64
+        example: 1787609712
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: 'Optional but strongly recommended — required in practice for headless
+
+        payments. Any string up to 255 characters; a fresh UUID per attempt
+
+        is the recommended form. A retry with the same key and body returns
+
+        the original result; the same key with a different body is rejected
+
+        with `409 IDEMPOTENCY_CONFLICT`. Keys are scoped to your client.
+
+        '
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+        example: 6f6b1afd-22e0-4137-a096-b15e41cdc890
   responses:
+    CustomerNotFound:
+      description: '`integratorCustomerId` is not linked to a Bilt member. Send the
+
+        customer through account linking, then retry.
+
+        '
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: CUSTOMER_NOT_FOUND
+              message: No linked Bilt member for integratorCustomerId
+              requestId: request_sandbox_127
+              retryable: false
     InvalidRequest:
       description: 'The request is malformed. `message` names the offending field.
 
@@ -829,89 +845,6 @@ components:
                   message: All lineItems must use the same currency; only USD is supported
                   requestId: request_sandbox_125
                   retryable: false
-    RateLimited:
-      description: 'Too many requests. Gateway-enforced; retry with backoff, honouring
-
-        `Retry-After` when present. The sync endpoint''s limit is lower than
-
-        the async endpoint''s. Per-integrator quotas are agreed during
-
-        onboarding when your volume warrants one.
-
-        '
-      headers:
-        Retry-After:
-          description: Number of seconds to wait before retrying.
-          schema:
-            type: integer
-            minimum: 1
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-          example:
-            error:
-              code: RATE_LIMIT_EXCEEDED
-              message: Too many requests
-              requestId: request_sandbox_132
-              retryable: true
-    InternalError:
-      description: 'Unexpected Bilt error. For headless payments, do not retry blindly:
-
-        the charge may have been accepted — check for a `payment.*` webhook
-
-        for the same `orderId` first, and retry with the **same**
-
-        `Idempotency-Key`.
-
-        '
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-          example:
-            error:
-              code: INTERNAL_ERROR
-              message: Unexpected server error
-              requestId: request_sandbox_133
-              retryable: false
-    Conflict:
-      description: Idempotency conflict, or the session is already terminal.
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-          examples:
-            idempotencyConflict:
-              value:
-                error:
-                  code: IDEMPOTENCY_CONFLICT
-                  message: Idempotency-Key was already used with a different request body
-                  requestId: request_sandbox_130
-                  retryable: false
-            sessionAlreadyCompleted:
-              value:
-                error:
-                  code: SESSION_ALREADY_COMPLETED
-                  message: The checkout session is already in a terminal state
-                  requestId: request_sandbox_131
-                  retryable: false
-    CustomerNotFound:
-      description: '`integratorCustomerId` is not linked to a Bilt member. Send the
-
-        customer through account linking, then retry.
-
-        '
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-          example:
-            error:
-              code: CUSTOMER_NOT_FOUND
-              message: No linked Bilt member for integratorCustomerId
-              requestId: request_sandbox_127
-              retryable: false
     ServiceUnavailable:
       description: 'Bilt could not reach the customer''s wallet or another required
 
@@ -940,6 +873,73 @@ components:
               message: Missing or invalid access token
               requestId: request_sandbox_126
               retryable: false
+    Conflict:
+      description: Idempotency conflict, or the session is already terminal.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            idempotencyConflict:
+              value:
+                error:
+                  code: IDEMPOTENCY_CONFLICT
+                  message: Idempotency-Key was already used with a different request body
+                  requestId: request_sandbox_130
+                  retryable: false
+            sessionAlreadyCompleted:
+              value:
+                error:
+                  code: SESSION_ALREADY_COMPLETED
+                  message: The checkout session is already in a terminal state
+                  requestId: request_sandbox_131
+                  retryable: false
+    InternalError:
+      description: 'Unexpected Bilt error. For headless payments, do not retry blindly:
+
+        the charge may have been accepted — check for a `payment.*` webhook
+
+        for the same `orderId` first, and retry with the **same**
+
+        `Idempotency-Key`.
+
+        '
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: Unexpected server error
+              requestId: request_sandbox_133
+              retryable: false
+    RateLimited:
+      description: 'Too many requests. Gateway-enforced; retry with backoff, honouring
+
+        `Retry-After` when present. The sync endpoint''s limit is lower than
+
+        the async endpoint''s. Per-integrator quotas are agreed during
+
+        onboarding when your volume warrants one.
+
+        '
+      headers:
+        Retry-After:
+          description: Number of seconds to wait before retrying.
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: Too many requests
+              requestId: request_sandbox_132
+              retryable: true
   securitySchemes:
     checkoutPartnerOAuth:
       type: oauth2
