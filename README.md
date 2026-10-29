@@ -64,5 +64,119 @@
 > Full detail: **[Where this data comes from](https://apievangelist.com/about/where-our-data-comes-from)**
 <!-- API-EVANGELIST-PROVENANCE:END -->
 
-BILT is a company surfaced via the API Evangelist harvest backlog (source: secondary-market) and added to the network as a stub for full-pipeline profiling.
-- https://www.nasdaqprivatemarket.com/
+BILT is a financial technology company offering a loyalty and payments platform that lets members earn rewards on rent and mortgage payments. It provides a co‑branded credit card, rent‑payment reporting to credit bureaus, and a suite of neighborhood benefits, aiming to transform housing expenses into valuable points and perks for users.
+
+**Areas:** Fintech · Loyalty · Payments · RentRewards · Credit Cards · Real Estate
+
+## BILT on APIs.io
+
+Everything profiled for BILT is published on APIs.io rather than in this repository. Start at the provider page — **[apis.io/providers/bilt/](https://apis.io/providers/bilt/)** — or go straight to one of the APIs or properties below.
+
+### APIs (4)
+
+- [Bilt Checkout SDK](https://apis.io/apis/bilt/bilt-checkout-sdk/) — External backend contract for integrators using the Bilt Checkout SDK, documented at developers.bilt.com. No owned OpenAPI spec found on Bilt's own domain.
+- [BILT Default payment method API](https://apis.io/apis/bilt/bilt-default-payment-method-api/) — Read-only lookup of a customer's current default payment-method summary for display and pre-flight checks. Bilt resolves the default again at charge time,…
+- [BILT Headless payments API](https://apis.io/apis/bilt/bilt-headless-payments-api/) — Charge a customer's current default Bilt payment method with no Bilt UI, for subscriptions, autopay, or other off-session payments. The outcome arrives as a…
+- [BILT One-time payments API](https://apis.io/apis/bilt/bilt-one-time-payments-api/) — Open a checkout session that renders Bilt-hosted checkout in the Checkout SDK. The customer confirms the payment themselves; the outcome arrives as a…
+
+### Published properties
+
+Each property below is a page on APIs.io carrying the machine-readable artifact and what it says.
+
+#### AsyncAPI (1)
+
+Event-driven and webhook contracts.
+
+- [Bilt Webhooks](https://apis.io/asyncapis/bilt/bilt-webhooks/)
+
+#### MCP servers (1)
+
+Model Context Protocol servers that expose the API to agents.
+
+- [bilt-mcp.yml](https://apis.io/servers/bilt/bilt-mcp-yml/)
+
+#### JSON-LD (1)
+
+Linked-data contexts for the provider's vocabulary.
+
+- [Bilt Context](https://apis.io/jsonld/bilt/bilt-context/)
+
+#### Overlays (1)
+
+OpenAPI overlays, including conversational phrasing for each operation.
+
+- [Bilt Overlay](https://apis.io/overlays/bilt/bilt-overlay/)
+
+#### Governance rules (1)
+
+Spectral rulesets for the provider's contracts.
+
+- [BILT API Rules](https://apis.io/rules/bilt/bilt-rules/)
+
+#### Security (1)
+
+Authentication, trust centre, and vulnerability disclosure.
+
+- [Bilt Domain Security](https://apis.io/security/bilt/bilt-domain-security/)
+
+## Where to find this API
+
+Links to the company's own pages. This repository publishes no copy of their specifications — the canonical document is theirs and lives at the URLs below.
+
+- [Website](https://www.bilt.com)
+- [Documentation](https://developers.bilt.com/)
+- [API reference](https://developers.bilt.com/docs/)
+- [Trust centre](https://trust.bilt.com/)
+
+## API Evangelist rating
+
+**Kin Score 29.7** — thin · rubric 0.24.0 · scored 2026-10-17
+
+| Facet | Score |
+|---|---|
+| Discoverability | 64.3 |
+| Contract quality | 64.6 |
+| Contract governance | 22.0 |
+| Operational transparency | 7.9 |
+| Developer ergonomics | 16.7 |
+| Access clarity | 7.9 |
+
+**Agent readiness 41.7** — agent-ready (gated down from agent-native)
+
+| Agent-readiness dimension | Result |
+|---|---|
+| Spec Presence | yes |
+| Agentic Access | — |
+| Reversibility Documented | documented (partial credit) |
+| MCP Server | — |
+| Auth Clarity | negotiable (partial credit) |
+| Idempotency | verified |
+| Error Semantics | derived (partial credit) |
+| OpenAPI Examples | verified |
+| Rate Limit Signal | verified |
+| Event Surface Described | yes |
+| Agent Skills | — |
+| Well Known Catalog | — |
+| Consent Identity | — |
+| Agent Card | — |
+| Dry Run Mode | — |
+| Delegated Identity | — |
+| Protected Resource Metadata | — |
+| Dynamic Client Registration | — |
+| Agentic Commerce | — |
+
+**Regulatory alignment 14.3** — Payments
+
+The rubric is published at [github.com/api-evangelist/kin-score](https://github.com/api-evangelist/kin-score). The per-check breakdown behind these numbers — which checks were earned, partial or missed — along with score history and how this provider compares to its peers, is available at [apis.io/providers/bilt/](https://apis.io/providers/bilt/).
+
+## How this profile is made
+
+API Evangelist profiles a company's public API surface the way a developer would find it: the website, developer portal and documentation, the specifications it publishes, its public repositories, and its pricing, status and changelog pages. From that it derives the properties above — contracts split per API, workflows, schemas, collections, governance rules, plans and rate limits — and scores them against the published [Kin Score rubric](https://github.com/api-evangelist/kin-score).
+
+The artifacts are published on [APIs.io](https://apis.io), not in this repository. This repository is the public record for BILT: the place to say something is wrong, missing or out of date, and to ask for a re-score or a removal.
+
+## Open an issue
+
+- **Something about this listing** — a wrong description, a missing API, a stale artifact or a question about the rating: [open an issue on this repository](https://github.com/api-evangelist/bilt/issues/new).
+- **A new API, or one that is not in the catalog yet** — [submit it on APIs.io](https://apis.io/add/).
+- **Anything else** — [the APIs.io inbox](https://github.com/api-search/inbox/issues/new) or [info@apievangelist.com](mailto:info@apievangelist.com).
